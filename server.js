@@ -269,7 +269,7 @@ class MatchRoom extends Room {
         const rad = 1.5 + (q.surge > 0 && o.k === 0 ? 5.5 : 0);
         const dx = q.x - o.x, dz = q.z - o.z, d2 = dx * dx + dz * dz;
         if (d2 < rad * rad) {
-          if (q.surge > 0 && o.k === 0 && d2 > 2.4) { const d = Math.sqrt(d2); o.x += (dx / d) * 22 * dt; o.z += (dz / d) * 22 * dt; }
+          if (q.surge > 0 && o.k === 0 && d2 > 2.4) { const d = Math.sqrt(d2); o.x += (dx / d) * 16 * dt; o.z += (dz / d) * 16 * dt; }
           else { o.dead = true; if (o.k === 1) this.takeStack(q); else this.collect(q, o.v); break; }
         }
       }
@@ -279,8 +279,8 @@ class MatchRoom extends Room {
   }
 
   shoot(p) {
-    p.fireCd = 0.5;
-    this.bullets.push({ id: this.nid++, owner: p.id, x: p.x + Math.sin(p.ang) * 1.2, z: p.z + Math.cos(p.ang) * 1.2, vx: Math.sin(p.ang) * 34, vz: Math.cos(p.ang) * 34, ttl: 0.9 });
+    p.fireCd = p.bot ? 1.4 : 0.6;
+    this.bullets.push({ id: this.nid++, owner: p.id, x: p.x + Math.sin(p.ang) * 1.2, z: p.z + Math.cos(p.ang) * 1.2, vx: Math.sin(p.ang) * 22, vz: Math.cos(p.ang) * 22, ttl: 1.1 });
   }
 
   hit(q, b) {
@@ -309,15 +309,15 @@ class MatchRoom extends Room {
       }
       p.tgt = best;
     }
-    let foe = null, fd = 16;
+    let foe = null, fd = 13;
     for (const q of list) { if (q === p) continue; const d = Math.hypot(q.x - p.x, q.z - p.z); if (d < fd) { fd = d; foe = q; } }
     let mx = 0, mz = 0;
     if (p.tgt) { const dx = p.tgt.x - p.x, dz = p.tgt.z - p.z, d = Math.hypot(dx, dz) || 1; mx = dx / d; mz = dz / d; }
     else { mx = Math.sin(this.elapsed + p.x); mz = Math.cos(this.elapsed + p.z); }
-    if (foe) { p.ang = Math.atan2(foe.x - p.x, foe.z - p.z) + rnd(-0.22, 0.22); p.fire = Math.random() < 0.06; }
+    if (foe) { p.ang = Math.atan2(foe.x - p.x, foe.z - p.z) + rnd(-0.3, 0.3); p.fire = Math.random() < 0.02; }
     else { p.ang = Math.atan2(mx, mz); p.fire = false; }
     if (p.surgeCd <= 0 && Math.random() < 0.15 * dt * 3) this.useSurge(p);
-    const sp = this.speedOf(p) * 0.82 * dt;
+    const sp = this.speedOf(p) * 0.8 * dt;
     const r = resolve(p.x + mx * sp, p.z + mz * sp, 0.9);
     if (Math.hypot(r.x - p.x - mx * sp, r.z - p.z - mz * sp) > sp * 0.5) { p.rethink = 0; p.tgt = null; }
     p.x = r.x; p.z = r.z;

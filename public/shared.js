@@ -46,5 +46,5 @@ export function blocked(x, z) {
 
 export const RULES = {
   ROUND: 150, ADVANCE: 5000, FACTOR: 1.35, HOLDBACK: 0.25,
-  STACK_ADV: 3000, STACK_FACTOR: 1.45, STACK_HB: 0.05, SPEED: 11,
+  STACK_ADV: 3000, STACK_FACTOR: 1.45, STACK_HB: 0.05, SPEED: 7.5,
 };

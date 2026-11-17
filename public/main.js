@@ -169,8 +169,13 @@ function makeOrb(k, v) {
   }
   return g;
 }
-const bulletGeo = new THREE.BoxGeometry(0.55, 0.08, 0.75);
-const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff3344, emissiveIntensity: 0.6 });
+const bulletGeo = new THREE.PlaneGeometry(1.1, 1.4).rotateX(-Math.PI / 2);
+const bulletMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: canvasTex(128, 160, (g, w, h) => {
+  g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#d7263d'; g.fillRect(0, 0, w, 34);
+  g.fillStyle = '#fff'; g.font = '900 22px system-ui'; g.textAlign = 'center'; g.fillText('NOTICE', w / 2, 25);
+  g.fillStyle = '#999'; for (let i = 0; i < 5; i++) g.fillRect(14, 52 + i * 16, w - 28, 6);
+  g.save(); g.translate(w / 2, h - 30); g.rotate(-0.3); g.strokeStyle = '#d7263d'; g.lineWidth = 4; g.strokeRect(-40, -14, 80, 28); g.fillStyle = '#d7263d'; g.font = '900 18px system-ui'; g.fillText('DUE', 0, 7); g.restore();
+}) });
 function addRing(x, z, color = 0xff5d6c, max = 4) {
   const m = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.7, 28), new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide }));
   m.rotation.x = -Math.PI / 2; m.position.set(x, 0.3, z); scene.add(m); fxList.push({ m, t: 0, max });
@@ -259,8 +264,8 @@ function onSnap(s) {
   const lb = new Set();
   for (const b of s.b) {
     lb.add(b[0]); let m = bulletMeshes.get(b[0]);
-    if (!m) { m = new THREE.Mesh(bulletGeo, bulletMat); m.position.y = 1.4; scene.add(m); bulletMeshes.set(b[0], m); m.position.set(b[1], 1.4, b[2]); m.userData.fresh = true; }
-    m.userData.tx = b[1]; m.userData.tz = b[2]; m.rotation.y = b[3];
+    if (!m) { m = new THREE.Mesh(bulletGeo, bulletMat); m.position.y = 1.5; scene.add(m); bulletMeshes.set(b[0], m); m.position.set(b[1], 1.4, b[2]); m.userData.fresh = true; }
+    m.userData.tx = b[1]; m.userData.tz = b[2]; m.userData.spin = true;
   }
   for (const [id, m] of bulletMeshes) if (!lb.has(id)) { scene.remove(m); bulletMeshes.delete(id); }
   if (prev !== phase) onPhase(prev);
@@ -415,7 +420,7 @@ function frame() {
     if (c.boost > 0) { c.g.children[0].material.emissive?.set(0x550022); } else c.g.children[0].material.emissive?.set(0x000000);
   }
   for (const m of orbMeshes.values()) { const s = m.getObjectByName('spin'); s.rotation.y += dt * 3; s.position.y = (s.geometry.type === 'OctahedronGeometry' ? 1.6 : 1.1) + Math.sin(t * 3 + m.position.x) * 0.2; }
-  for (const m of bulletMeshes.values()) { if (m.userData.tx !== undefined) { const k = 1 - Math.exp(-35 * dt); m.position.x += (m.userData.tx - m.position.x) * k; m.position.z += (m.userData.tz - m.position.z) * k; } }
+  for (const m of bulletMeshes.values()) { m.rotation.y += dt * 14; if (m.userData.tx !== undefined) { const k = 1 - Math.exp(-35 * dt); m.position.x += (m.userData.tx - m.position.x) * k; m.position.z += (m.userData.tz - m.position.z) * k; } }
   for (let i = fxList.length - 1; i >= 0; i--) { const f = fxList[i]; f.t += dt * 2.2; f.m.scale.setScalar(1 + f.t * f.max); f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); fxList.splice(i, 1); } }
   const ring = scene.getObjectByName('hqRing'); if (ring) ring.rotation.y += dt * 2;
   // camera
