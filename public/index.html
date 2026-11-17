@@ -19,13 +19,13 @@
   <div id="goal">🎯 Pay off your debt FIRST — or finish with the most cash after debt</div>
   <div id="books" class="card">
     <h4>YOUR ADVANCE</h4><div id="b-rank" class="rankchip"></div>
-    <div class="row"><span>Advance</span><b>$5,000</b></div>
-    <div class="row"><span>Factor rate</span><b>1.35×</b></div>
+    <div class="row hide-m"><span>Advance</span><b>$5,000</b></div>
+    <div class="row hide-m"><span>Factor rate</span><b>1.35×</b></div>
     <div class="row"><span>Still owed</span><b id="b-owed" class="red">$6,750</b></div>
     <div class="bar"><i id="b-bar"></i></div>
     <div class="row"><span>Holdback / sale</span><b id="b-hb" class="gold">25%</b></div>
     <div class="row"><span>Take-home cash</span><b id="b-cash" class="green">$5,000</b></div>
-    <div class="row"><span>Swept to lender</span><b id="b-swept">$0</b></div>
+    <div class="row hide-m"><span>Swept to lender</span><b id="b-swept">$0</b></div>
     <div class="row" style="margin-top:4px"><span>Net worth</span><b id="b-net">$0</b></div>
     <div id="b-boost" class="chip hidden">2× SALES BOOST</div>
     <div id="b-shield" class="chip blue hidden">🛡 LEGAL SHIELD</div>
@@ -74,8 +74,8 @@
   <div class="panel">
     <h2>MAIN STREET LOBBY</h2>
     <p class="sub" id="lobbyTip"></p>
-    <div class="how">
-      <b>🎯 HOW TO WIN</b>
+    <details class="how" id="howD" open>
+      <summary><b>🎯 HOW TO WIN</b> <span class="tap">tap to toggle</span></summary>
       <ol>
         <li><b>You owe $6,750</b> on a $5,000 cash advance. Grab 🪙 coins (your sales) — <b>25% is auto-swept</b> to the lender.</li>
         <li><b>Be first to reach $0 owed</b> and the round ends. Otherwise the <b>highest net worth</b> (cash − debt) wins at 0:00.</li>
@@ -83,7 +83,7 @@
         <li>Power-ups: 🟢 <b>Payoff Discount</b> (−$600 debt) · 🔵 <b>Legal Shield</b> (blocks notices) · 🟣 <b>Holdback Holiday</b> (sweep drops to 40%).</li>
         <li>📄 <b>Collections Notices</b> (the flying red-stamped papers) are your "gun": a hit stuns a rival and makes them drop cash. Dodge theirs.</li>
       </ol>
-    </div>
+    </details>
     <div class="how" id="rankCard"></div>
     <div class="skins" id="skins"></div>
     <div id="roster"></div>

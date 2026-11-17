@@ -29,6 +29,7 @@ let room = null, myId = null, roster = new Map(), hostId = null, phase = 'lobby'
 let myName = '', mySkin = +localStorage.getItem('frf_skin') || 0, code = '';
 const touch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
 if (touch) document.body.classList.add('touch');
+if (touch) $('#howD')?.removeAttribute('open');
 const me = { x: 0, z: 0, ang: 0, stun: 0, surgeCd: 0, surge: 0, boost: 0, owed: 0, cash: 0, hb: 0.25, swept: 0 };
 
 /* ---------- audio ---------- */

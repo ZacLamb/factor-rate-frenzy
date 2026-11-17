@@ -90,3 +90,13 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:4;back
 @keyframes bob{50%{transform:translateY(-4px)}}
 .meta{margin-top:2px}
 @media(max-width:560px){.steps{grid-template-columns:1fr}.steps div{flex-direction:row;text-align:left;gap:10px}.steps div i{flex:none}.steps b{display:block}}
+
+.how summary{cursor:pointer;list-style:none}.how summary::-webkit-details-marker{display:none}.tap{font-size:10px;color:#9a9577;float:right}
+#startBtn{position:sticky;bottom:0;z-index:2}
+body.touch .hide-m,body.touch #goal{display:none}
+body.touch #books{width:128px;font-size:10.5px;padding:6px 8px}
+body.touch #books h4{margin-bottom:2px}
+body.touch #timer{padding:3px 12px;top:max(8px,env(safe-area-inset-top))}
+body.touch #timer b{font-size:20px}body.touch #tbar{width:80px}
+body.touch #hint{display:none}
+body.touch #toast{top:66px}
