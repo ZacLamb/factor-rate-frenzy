@@ -92,7 +92,11 @@ function handler(req, res) {
   }
 
   let file;
-  if (VENDOR[url.pathname]) file = path.join(__dirname, VENDOR[url.pathname]);
+  if (url.pathname.startsWith('/vendor/examples/')) {
+    const base = path.join(__dirname, 'node_modules/three/examples');
+    file = path.join(base, decodeURIComponent(url.pathname.slice('/vendor/examples/'.length)));
+    if (!file.startsWith(base)) { res.writeHead(403); res.end(); return; }
+  } else if (VENDOR[url.pathname]) file = path.join(__dirname, VENDOR[url.pathname]);
   else {
     const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
     file = path.join(__dirname, 'public', rel);

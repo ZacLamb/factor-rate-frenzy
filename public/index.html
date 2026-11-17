@@ -8,7 +8,7 @@
 <meta property="og:title" content="Factor Rate Frenzy">
 <meta property="og:description" content="Dodge the holdback. Don't stack. A 3D multiplayer game that teaches merchant cash advances.">
 <link rel="stylesheet" href="style.css">
-<script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/examples/jsm/"}}</script>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -38,6 +38,22 @@
   <div id="stickL" class="stick"><i></i></div>
   <div id="stickR" class="stick"><i></i></div>
   <button id="abBtn" class="ab">SURGE</button>
+</div>
+
+<!-- Intro -->
+<div id="intro" class="overlay">
+  <div class="intro">
+    <div class="kicker">THE MERCHANT CASH ADVANCE GAME</div>
+    <div class="title"><span>FACTOR</span><span>RATE</span><span class="g">FRENZY</span></div>
+    <p class="tag">Take the advance. Beat the holdback. <b>Don't stack.</b></p>
+    <div class="steps">
+      <div><i>💰</i><b>Collect sales</b><small>Grab coins around Main Street. A holdback is swept from each one.</small></div>
+      <div><i>📄</i><b>Serve notices</b><small>Stun rivals and make them drop cash. Grab power-ups to turn the tide.</small></div>
+      <div><i>👑</i><b>Climb to Top Rep</b><small>Pay your debt off first, earn XP and unlock bonuses.</small></div>
+    </div>
+    <button class="btn big" id="playBtn">PLAY NOW ▶</button>
+    <small class="meta">Free · 2½-minute rounds · Phone or desktop · Play with friends via link</small>
+  </div>
 </div>
 
 <!-- Email gate -->
