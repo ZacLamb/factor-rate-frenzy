@@ -463,7 +463,7 @@ function buildSkins() {
   $('#skins').querySelectorAll('.skin').forEach((el) => el.onclick = () => { mySkin = +el.dataset.i; localStorage.setItem('frf_skin', mySkin); buildSkins(); room?.send('prof', { name: myName, skin: mySkin }); });
 }
 $('#qBtn').textContent = '⚙ ' + ({ low: 'Fast', high: 'High', ultra: 'Ultra' })[QUAL]; $('#qBtn').title = 'Graphics quality (tap to change)';
-$('#qBtn').onclick = () => { localStorage.setItem('frf_q', { low: 'high', high: 'ultra', ultra: 'low' }[QUAL]); sessionStorage.removeItem('frf_dg'); location.reload(); };
+$('#qBtn').onclick = () => { localStorage.setItem('frf_q', { low: 'high', high: 'ultra', ultra: 'low' }[QUAL]); sessionStorage.removeItem('frf_dg'); sessionStorage.setItem('frf_skipintro', '1'); location.reload(); };
 $('#startBtn').onclick = () => room?.send('start');
 $('#copyBtn').onclick = async () => {
   const url = $('#shareLink').value;
@@ -518,6 +518,7 @@ function proceed() {
   try { const l = JSON.parse(localStorage.getItem('frf_lead') || 'null'); if (l?.email) { myName = l.name; afterGate(); } else $('#gate').classList.remove('hidden'); } catch { $('#gate').classList.remove('hidden'); }
 }
 $('#playBtn').onclick = proceed;
+if (sessionStorage.getItem('frf_skipintro')) { sessionStorage.removeItem('frf_skipintro'); proceed(); }
 
 /* ---------- main loop ---------- */
 function resize() {
@@ -550,7 +551,7 @@ function frame() {
   const rawDt = clock.getDelta(); const dt = Math.min(rawDt, 0.05); t += dt;
   ema += (rawDt * 1000 - ema) * 0.05; adaptT += rawDt;
   if (adaptT > 2.5) { adaptT = 0;
-    if (ema > 34 && dpr <= 0.71 && QUAL !== 'low' && phase === 'lobby' && !sessionStorage.getItem('frf_dg')) { sessionStorage.setItem('frf_dg', '1'); localStorage.setItem('frf_q', QUAL === 'ultra' ? 'high' : 'low'); location.reload(); }
+    if (ema > 34 && dpr <= 0.71 && QUAL !== 'low' && phase === 'lobby' && !sessionStorage.getItem('frf_dg')) { sessionStorage.setItem('frf_dg', '1'); if (room) sessionStorage.setItem('frf_skipintro', '1'); localStorage.setItem('frf_q', QUAL === 'ultra' ? 'high' : 'low'); location.reload(); }
     if (ema > 26 && dpr > 0.7) { dpr = Math.max(0.7, dpr - 0.2); renderer.setPixelRatio(dpr); resize(); }
     else if (ema < 15 && dpr < dprMax) { dpr = Math.min(dprMax, dpr + 0.15); renderer.setPixelRatio(dpr); resize(); } }
   // local movement
