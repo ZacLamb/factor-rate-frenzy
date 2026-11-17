@@ -76,9 +76,9 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:4;back
 .rankchip{font-size:11px;color:#fff1b5;margin:-2px 0 6px;font-weight:700}
 
 #intro{background:radial-gradient(ellipse at 50% 40%,rgba(10,8,30,.25),rgba(5,4,16,.88));z-index:12}
-.intro{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;max-width:760px;width:100%}
+.intro{display:flex;flex-direction:column;align-items:center;text-align:center;gap:min(14px,1.6vh);margin:auto;max-width:760px;width:100%}
 .kicker{font-size:12px;letter-spacing:4px;color:#c9c3ff;font-weight:700}
-.title{display:flex;flex-direction:column;line-height:.88;font-weight:900;font-size:clamp(54px,15vw,132px);letter-spacing:2px;text-transform:uppercase}
+.title{display:flex;flex-direction:column;line-height:.88;font-weight:900;font-size:clamp(44px,min(15vw,15vh),132px);letter-spacing:2px;text-transform:uppercase}
 .title span{color:#fff;text-shadow:0 0 30px rgba(255,255,255,.25),0 6px 0 rgba(0,0,0,.35)}
 .title .g{color:var(--gold);text-shadow:0 0 40px rgba(255,200,61,.6),0 6px 0 #8a5a00;animation:glow 2.4s ease-in-out infinite alternate}
 @keyframes glow{to{text-shadow:0 0 70px rgba(255,200,61,.95),0 6px 0 #8a5a00}}
