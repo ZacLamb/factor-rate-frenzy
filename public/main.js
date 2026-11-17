@@ -43,10 +43,12 @@ function beep(f, d = 0.08, type = 'sine', v = 0.05, f2) {
 /* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: !touch, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, touch ? 1.75 : 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15; renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = !touch; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1b1f3a);
-scene.fog = new THREE.Fog(0x1b1f3a, 70, 150);
+function canvasTexEarly(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+scene.background = canvasTexEarly(16, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#0b0a22'); gr.addColorStop(0.55, '#2d2358'); gr.addColorStop(1, '#a8527a'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+scene.fog = new THREE.Fog(0x2a2150, 80, 230);
 const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 300);
 scene.add(new THREE.HemisphereLight(0xbfd2ff, 0x2a2438, 0.9));
 const sun = new THREE.DirectionalLight(0xffe2b0, 1.2);
@@ -66,6 +68,19 @@ function textSprite(text, color = '#fff', size = 4, bg = true) {
   s.scale.set(size, size / 4, 1); s.renderOrder = 10; return s;
 }
 
+function windowMaps(w, h, base, lit = 0.55) {
+  const cols = Math.max(2, Math.round(w / 1.7)), rows = Math.max(1, Math.round(h / 1.9)), cell = 28;
+  const mk = (emit) => canvasTex(cols * cell, rows * cell, (g, W, H) => {
+    g.fillStyle = emit ? '#000' : base; g.fillRect(0, 0, W, H);
+    const r = (() => { let s = (cols * 31 + rows * 17 + (emit ? 0 : 0)) % 9973; return () => (s = (s * 9301 + 49297) % 233280) / 233280; })();
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const on = r() < lit;
+      g.fillStyle = emit ? (on ? (r() < 0.3 ? '#9fd8ff' : '#ffd98a') : '#000') : (on ? '#ffe9b0' : 'rgba(10,14,30,.75)');
+      g.fillRect(x * cell + 6, y * cell + 6, cell - 12, cell - 10);
+    }
+  });
+  return { map: mk(false), emissiveMap: mk(true) };
+}
 // ground
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(ARENA * 2 + 40, ARENA * 2 + 40), new THREE.MeshStandardMaterial({
   roughness: 0.95, map: canvasTex(512, 512, (g, w, h) => {
@@ -89,7 +104,10 @@ for (const [x, z, w, d] of [[0, -ARENA - 1, ARENA * 2 + 4, 2], [0, ARENA + 1, AR
 // buildings
 for (const b of SHOPS) {
   const g = new THREE.Group(); g.position.set(b.x, 0, b.z);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.7, metalness: b.hq ? 0.5 : 0 }));
+  const wm = b.label ? windowMaps(b.w, b.h, '#' + b.color.toString(16).padStart(6, '0'), b.hq ? 0.35 : 0.6) : null;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), wm
+    ? new THREE.MeshStandardMaterial({ map: wm.map, emissiveMap: wm.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.6, metalness: b.hq ? 0.4 : 0 })
+    : new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.8 }));
   body.position.y = b.h / 2; body.castShadow = body.receiveShadow = true; g.add(body);
   if (b.label) {
     const face = b.z > 0 ? -1 : 1; // sign faces the arena centre
@@ -110,11 +128,31 @@ for (const b of SHOPS) {
   }
   scene.add(g);
 }
-// street lamps decoration
-for (let i = -1; i <= 1; i += 2) for (let j = -1; j <= 1; j += 2) {
-  const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 5), new THREE.MeshStandardMaterial({ color: 0x222 }));
-  p.position.set(i * 32, 2.5, j * 6); scene.add(p);
-  const l = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xffe9a8 })); l.position.set(i * 32, 5.2, j * 6); scene.add(l);
+// wall neon strip, lamps, trees, skyline
+const neonM = new THREE.MeshBasicMaterial({ color: 0xffc83d });
+for (const [x, z, w, d] of [[0, -ARENA - 1, ARENA * 2 + 4, 0.2], [0, ARENA + 1, ARENA * 2 + 4, 0.2], [-ARENA - 1, 0, 0.2, ARENA * 2], [ARENA + 1, 0, 0.2, ARENA * 2]]) {
+  const n = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), neonM); n.position.set(x, 2.46, z); scene.add(n);
+}
+const lampM = new THREE.MeshBasicMaterial({ color: 0xffe9a8 }), poleM = new THREE.MeshStandardMaterial({ color: 0x1a1a22 });
+let lampN = 0;
+for (const [x, z] of [[-27, -ARENA - 3], [0, -ARENA - 3], [27, -ARENA - 3], [-27, ARENA + 3], [0, ARENA + 3], [27, ARENA + 3], [-ARENA - 3, -14], [-ARENA - 3, 14], [ARENA + 3, -14], [ARENA + 3, 14]]) {
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 7), poleM); p.position.set(x, 3.5, z); scene.add(p);
+  const l = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), lampM); l.position.set(x, 7.2, z); scene.add(l);
+  if (!touch || lampN < 4) { const pl = new THREE.PointLight(0xffd9a0, 90, 38, 2); pl.position.set(x * 0.85, 7, z * 0.85); scene.add(pl); lampN++; }
+}
+const treeG = new THREE.ConeGeometry(2, 4.5, 8), trunkG = new THREE.CylinderGeometry(0.3, 0.4, 2, 6);
+const treeM = new THREE.MeshStandardMaterial({ color: 0x1f6b4a, roughness: 0.9 }), trunkM = new THREE.MeshStandardMaterial({ color: 0x4a3426 });
+for (let k = 0; k < 40; k++) {
+  const a = (k / 40) * Math.PI * 2, r = ARENA + 8 + (k % 3) * 3, x = Math.cos(a) * r, z = Math.sin(a) * r * 0.96;
+  const t = new THREE.Group(); t.position.set(x, 0, z);
+  const tr = new THREE.Mesh(trunkG, trunkM); tr.position.y = 1; t.add(tr);
+  for (let q = 0; q < 2; q++) { const c = new THREE.Mesh(treeG, treeM); c.position.y = 3.2 + q * 1.6; c.scale.setScalar(1 - q * 0.3); t.add(c); }
+  t.scale.setScalar(0.9 + (k % 4) * 0.15); scene.add(t);
+}
+const skyMats = [0, 1, 2].map((i) => { const wm = windowMaps(10 + i * 2, 40, i === 0 ? '#1a1633' : i === 1 ? '#221a40' : '#181a38', 0.4); return new THREE.MeshStandardMaterial({ map: wm.map, emissiveMap: wm.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0.8, roughness: 1 }); });
+for (let k = 0; k < 44; k++) {
+  const a = (k / 44) * Math.PI * 2 + (k % 3) * 0.02, r = 88 + (k % 5) * 9, h = 28 + ((k * 37) % 40);
+  const bld = new THREE.Mesh(new THREE.BoxGeometry(11 + (k % 3) * 2, h, 11 + (k % 4) * 2), skyMats[k % 3]); bld.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r); bld.rotation.y = a; scene.add(bld);
 }
 
 /* ---------- characters ---------- */
@@ -135,6 +173,8 @@ function makeChar(skin) {
   else if (k.hat === 'flower') { hat = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.12, 8, 16), hm); hat.rotation.x = Math.PI / 2; hat.position.y = 2.65; }
   else { hat = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.2, 16), hm); hat.position.y = 2.6; const v = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.4), hm); v.position.set(0, 2.52, 0.5); g.add(v); }
   g.add(hat);
+  g.userData.legs = [-1, 1].map((s) => { const lg = new THREE.Group(); lg.position.set(s * 0.26, 0.5, 0); const lm = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x1d2236 })); lm.position.y = -0.25; lm.castShadow = true; lg.add(lm); g.add(lg); return lg; });
+  const bubble = new THREE.Mesh(new THREE.SphereGeometry(1.7, 20, 14), new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.28 })); bubble.position.y = 1.5; bubble.visible = false; bubble.name = 'bubble'; g.add(bubble);
   const gun = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.8), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x442200 })); gun.position.set(0.62, 1.35, 0.55); g.add(gun);
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.1, 28), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; ring.name = 'ring'; g.add(ring);
@@ -157,15 +197,24 @@ function ensureChar(id) {
 const orbMeshes = new Map(), bulletMeshes = new Map(), fxList = [];
 const coinGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.16, 22).rotateX(Math.PI / 2);
 const coinMat = new THREE.MeshStandardMaterial({ color: 0xffc83d, metalness: 0.8, roughness: 0.25, emissive: 0x7a5200, emissiveIntensity: 0.6 });
+const POW = { 1: { c: 0xff2e63, l: 'STACK?', lc: '#ff8fa8', geo: () => new THREE.OctahedronGeometry(1.1) },
+  2: { c: 0x3ddc97, l: 'PAYOFF DISCOUNT', lc: '#8fffcf', geo: () => new THREE.IcosahedronGeometry(1) },
+  3: { c: 0x4cc9f0, l: 'LEGAL SHIELD', lc: '#9fe6ff', geo: () => new THREE.TorusKnotGeometry(0.6, 0.22, 48, 8) },
+  4: { c: 0xb388ff, l: 'HOLDBACK HOLIDAY', lc: '#d4bcff', geo: () => new THREE.DodecahedronGeometry(1) } };
+const ORB_COL = { 0: 0xffc83d, 1: 0xff2e63, 2: 0x3ddc97, 3: 0x4cc9f0, 4: 0xb388ff };
 function makeOrb(k, v) {
-  const g = new THREE.Group();
-  if (k === 1) {
-    const m = new THREE.Mesh(new THREE.OctahedronGeometry(1.1), new THREE.MeshStandardMaterial({ color: 0xff2e63, emissive: 0xff0a4a, emissiveIntensity: 1, metalness: 0.4, roughness: 0.3 }));
+  const g = new THREE.Group(); g.userData.k = k;
+  if (k >= 1) {
+    const P = POW[k];
+    const m = new THREE.Mesh(P.geo(), new THREE.MeshStandardMaterial({ color: P.c, emissive: P.c, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.3 }));
     m.position.y = 1.6; m.name = 'spin'; g.add(m);
-    const s = textSprite('STACK?', '#ff8fa8', 3.4); s.position.y = 3.4; g.add(s);
-    const l = new THREE.PointLight(0xff2e63, 2, 12); l.position.y = 1.5; g.add(l);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.7, 32), new THREE.MeshBasicMaterial({ color: P.c, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+    halo.rotation.x = -Math.PI / 2; halo.position.y = 0.08; halo.name = 'halo'; g.add(halo);
+    const s = textSprite(P.l, P.lc, 4.2); s.position.y = 3.6; g.add(s);
+    if (!touch) { const l = new THREE.PointLight(P.c, 25, 12, 2); l.position.y = 1.5; g.add(l); }
   } else {
     const m = new THREE.Mesh(coinGeo, coinMat); const sc = 0.75 + Math.min(v, 1500) / 1500 * 0.7; m.scale.setScalar(sc); m.position.y = 1.1; m.name = 'spin'; m.castShadow = !touch; g.add(m);
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.9, 20), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.22 })); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.06; g.add(glow);
   }
   return g;
 }
@@ -179,6 +228,13 @@ const bulletMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: can
 function addRing(x, z, color = 0xff5d6c, max = 4) {
   const m = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.7, 28), new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide }));
   m.rotation.x = -Math.PI / 2; m.position.set(x, 0.3, z); scene.add(m); fxList.push({ m, t: 0, max });
+}
+const burstGeo = new THREE.SphereGeometry(0.17, 6, 5);
+function burst(x, z, color, n = 9) {
+  for (let i = 0; i < n; i++) {
+    const mm = new THREE.Mesh(burstGeo, new THREE.MeshBasicMaterial({ color, transparent: true })); mm.position.set(x, 1.2, z); scene.add(mm);
+    const a = Math.random() * 6.28, sp = 3 + Math.random() * 5; fxList.push({ m: mm, p: true, t: 0, vx: Math.cos(a) * sp, vy: 4 + Math.random() * 5, vz: Math.sin(a) * sp });
+  }
 }
 const _v = new THREE.Vector3();
 function floatText(x, z, y, text, color = '#fff') {
@@ -253,8 +309,8 @@ function onSnap(s) {
   const seen = new Set();
   for (const a of s.p) {
     const id = a[0]; seen.add(id);
-    if (id === myId) { Object.assign(me, { stun: a[4], owed: a[5], cash: a[6], hb: a[7], boost: a[8], surge: a[9], surgeCd: a[10], swept: a[11] }); continue; }
-    const c = ensureChar(id); c.tx = a[1]; c.tz = a[2]; c.tang = a[3]; c.stun = a[4]; c.surge = a[9]; c.boost = a[8];
+    if (id === myId) { Object.assign(me, { stun: a[4], owed: a[5], cash: a[6], hb: a[7], boost: a[8], surge: a[9], surgeCd: a[10], swept: a[11], shield: a[13], cut: a[14] }); continue; }
+    const c = ensureChar(id); c.tx = a[1]; c.tz = a[2]; c.tang = a[3]; c.stun = a[4]; c.surge = a[9]; c.boost = a[8]; c.shield = a[13];
     if (c.x === 0 && c.z === 0) { c.x = a[1]; c.z = a[2]; }
   }
   for (const id of [...chars.keys()]) if (!seen.has(id) && id !== myId) { scene.remove(chars.get(id).g); chars.delete(id); }
@@ -264,7 +320,7 @@ function onSnap(s) {
     if (!m) { m = makeOrb(o[4], o[3]); scene.add(m); orbMeshes.set(o[0], m); m.userData.born = performance.now(); }
     m.position.x = o[1]; m.position.z = o[2];
   }
-  for (const [id, m] of orbMeshes) if (!live.has(id)) { scene.remove(m); orbMeshes.delete(id); }
+  for (const [id, m] of orbMeshes) if (!live.has(id)) { if (phase === 'play') burst(m.position.x, m.position.z, ORB_COL[m.userData.k] || 0xffc83d, m.userData.k ? 14 : 7); scene.remove(m); orbMeshes.delete(id); }
   const lb = new Set();
   for (const b of s.b) {
     lb.add(b[0]); let m = bulletMeshes.get(b[0]);
@@ -280,7 +336,7 @@ function showBanner(t, p) {
   setTimeout(() => b.classList.add('hidden'), 4900);
 }
 function onPhase(prev) {
-  if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner('PAY OFF YOUR ADVANCE FIRST', 'You owe $6,750. Grab coins — 25% of each is swept to the lender. First to $0 wins, otherwise highest net worth at 0:00. Avoid the red STACK pods.'); beep(660, 0.3, 'square', 0.04, 990); }
+  if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner('PAY OFF YOUR ADVANCE FIRST', 'You owe $6,750. Grab coins — 25% of each is swept to the lender. First to $0 wins, otherwise highest net worth at 0:00. Grab power-ups, avoid the red STACK pods.'); beep(660, 0.3, 'square', 0.04, 990); }
   else if (phase === 'lobby') { $('#hud').classList.add('hidden'); if ($('#results').classList.contains('hidden')) $('#lobby').classList.remove('hidden'); renderLobby(); }
   else if (phase === 'results') { /* panel opened by 'results' message */ }
 }
@@ -294,17 +350,24 @@ function onFx(f) {
     addRing(f.x, f.z, 0xff2e63, 7);
     toast(f.id === myId ? 'STACKED! +$3,000 cash and 2× sales… but payback +$4,350 and holdback +5%.' : `${rn(f.id)} stacked a second advance!`, 'bad'); if (f.id === myId) beep(200, 0.5, 'sawtooth', 0.06, 120);
   } else if (f.k === 'surge') { addRing(chars.get(f.id)?.x ?? me.x, chars.get(f.id)?.z ?? me.z, 0xffc83d, 6); }
+  else if (f.k === 'pow') {
+    const names = { 2: 'Early-payoff discount: −$600 off your payback!', 3: 'Legal shield! Immune to notices for 8s.', 4: 'Holdback holiday! Sweep drops to 40% for 10s (a reconciliation).' };
+    burst(f.x, f.z, ORB_COL[f.pk], 18); if (f.id === myId) { toast(names[f.pk], 'good'); beep(700, 0.25, 'triangle', 0.05, 1100); }
+  } else if (f.k === 'block') { addRing(f.x, f.z, 0x4cc9f0, 5); if (f.id === myId) { toast('Shield blocked a notice!', 'good'); beep(900, 0.1, 'square', 0.04); } }
   else if (f.k === 'free') toast(`${f.n} is DEBT-FREE — round over!`, 'good');
 }
 
 /* ---------- HUD & lobby ---------- */
 function fmtTime(t) { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
-let lastBoard = 0;
+let lastBoard = 0, lastSec = 0;
 function updateHud() {
   if (!snap) return;
   $('#tval').textContent = fmtTime(snap.tl);
+  $('#tbar').firstElementChild.style.width = (snap.tl / cfg.ROUND * 100) + '%'; $('#timer').classList.toggle('warn', snap.tl <= 30 && phase === 'play');
+  const sec = Math.ceil(snap.tl); if (phase === 'play' && sec <= 10 && sec !== lastSec) beep(sec <= 3 ? 880 : 600, 0.08, 'square', 0.03); lastSec = sec;
+  $('#b-shield').classList.toggle('hidden', !(me.shield > 0)); $('#b-cut').classList.toggle('hidden', !(me.cut > 0));
+  $('#b-hb').textContent = Math.round(me.hb * (me.cut > 0 ? 0.4 : 1) * 100) + '%';
   $('#b-owed').textContent = money(me.owed); $('#b-cash').textContent = money(me.cash); $('#b-swept').textContent = money(me.swept);
-  $('#b-hb').textContent = Math.round(me.hb * 100) + '%';
   const pay = me.swept + (me.owed <= 0 ? 0 : 0); const total = me.swept + me.owed;
   $('#b-bar').style.width = (total ? (pay / total) * 100 : 0) + '%';
   $('#b-net').textContent = money(me.cash - me.owed); $('#b-net').className = me.cash - me.owed >= 0 ? 'green' : 'red';
@@ -375,8 +438,25 @@ function resize() {
 addEventListener('resize', resize); resize();
 const aimLine = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 15).rotateX(-Math.PI / 2).translate(0, 0, 8.5), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.55, depthWrite: false }));
 aimLine.position.y = 0.12; aimLine.visible = false; scene.add(aimLine);
+let frameN = 0;
 const clock = new THREE.Clock(); let t = 0;
 const camPos = new THREE.Vector3(0, 30, 20);
+const mini = $('#mini'), mg = mini.getContext('2d');
+function drawMini() {
+  if (!snap || phase !== 'play') return;
+  const W = mini.width, S = W / (ARENA * 2 + 4), X = (x) => (x + ARENA + 2) * S, Z = (z) => (z + ARENA + 2) * S;
+  mg.clearRect(0, 0, W, W);
+  mg.fillStyle = 'rgba(40,46,70,.9)'; mg.fillRect(X(-ARENA), Z(-ARENA), ARENA * 2 * S, ARENA * 2 * S);
+  for (const b of SHOPS) { mg.fillStyle = b.hq ? '#ff3d4d' : '#' + b.color.toString(16).padStart(6, '0'); mg.globalAlpha = b.label ? 0.9 : 0.5; mg.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * S, b.d * S); }
+  mg.globalAlpha = 1;
+  for (const o of snap.o) { mg.fillStyle = '#' + (ORB_COL[o[4]] || 0xffc83d).toString(16).padStart(6, '0'); const r = o[4] ? 7 : 3.2; mg.beginPath(); mg.arc(X(o[1]), Z(o[2]), r, 0, 6.3); mg.fill(); if (o[4]) { mg.strokeStyle = '#fff'; mg.lineWidth = 1.5; mg.stroke(); } }
+  for (const b of snap.b) { mg.fillStyle = '#fff'; mg.fillRect(X(b[1]) - 2, Z(b[2]) - 2, 4, 4); }
+  for (const a of snap.p) {
+    const isMe = a[0] === myId, x = isMe ? me.x : a[1], z = isMe ? me.z : a[2], ang = isMe ? me.ang : a[3];
+    mg.save(); mg.translate(X(x), Z(z)); mg.rotate(-ang + Math.PI); mg.fillStyle = isMe ? '#ffc83d' : roster.get(a[0])?.b ? '#8892b0' : '#ffffff';
+    mg.beginPath(); mg.moveTo(0, 10); mg.lineTo(7, -7); mg.lineTo(-7, -7); mg.closePath(); mg.fill(); mg.restore();
+  }
+}
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05); t += dt;
   // local movement
@@ -422,17 +502,21 @@ function frame() {
     c.g.rotation.y = c.ang;
     c.g.rotation.z = c.stun > 0 ? Math.sin(t * 30) * 0.2 : 0;
     c.g.getObjectByName('aura').visible = c.surge > 0;
+    c.g.getObjectByName('bubble').visible = (id === myId ? me.shield : c.shield) > 0;
+    const mv = Math.hypot(c.x - (c.px ?? c.x), c.z - (c.pz ?? c.z)) / Math.max(dt, 1e-3); c.px = c.x; c.pz = c.z; c.walk = (c.walk || 0) + (Math.min(1, mv / 5) - (c.walk || 0)) * 0.25;
+    const sw = Math.sin(t * 13 + (c.seed ??= Math.random() * 6)) * c.walk * 0.9; c.g.userData.legs[0].rotation.x = sw; c.g.userData.legs[1].rotation.x = -sw; c.g.children[0].position.y = 1.15 + Math.abs(sw) * 0.06;
     const ring = c.g.getObjectByName('ring'); ring.material.color.set(id === myId ? 0xffc83d : roster.get(id)?.b ? 0x8892b0 : 0xffffff);
     if (c.flash > 0) { c.flash -= dt; c.g.scale.setScalar(1 + c.flash * 0.5); } else c.g.scale.setScalar(1);
     if (c.boost > 0) { c.g.children[0].material.emissive?.set(0x550022); } else c.g.children[0].material.emissive?.set(0x000000);
   }
-  for (const m of orbMeshes.values()) { const s = m.getObjectByName('spin'); s.rotation.y += dt * 3; s.position.y = (s.geometry.type === 'OctahedronGeometry' ? 1.6 : 1.1) + Math.sin(t * 3 + m.position.x) * 0.2; }
+  for (const m of orbMeshes.values()) { const s = m.getObjectByName('spin'); s.rotation.y += dt * 3; s.position.y = (m.userData.k >= 1 ? 1.7 : 1.1) + Math.sin(t * 3 + m.position.x) * 0.2; if (m.userData.k >= 1) { s.rotation.x += dt * 1.2; const h = m.getObjectByName('halo'); h.scale.setScalar(1 + Math.sin(t * 4) * 0.12); } }
   for (const m of bulletMeshes.values()) { m.rotation.y += dt * 14; if (m.userData.tx !== undefined) { const k = 1 - Math.exp(-35 * dt); m.position.x += (m.userData.tx - m.position.x) * k; m.position.z += (m.userData.tz - m.position.z) * k; } }
-  for (let i = fxList.length - 1; i >= 0; i--) { const f = fxList[i]; f.t += dt * 2.2; f.m.scale.setScalar(1 + f.t * f.max); f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); fxList.splice(i, 1); } }
+  for (let i = fxList.length - 1; i >= 0; i--) { const f = fxList[i]; if (f.p) { f.t += dt * 1.8; f.vy -= 22 * dt; f.m.position.x += f.vx * dt; f.m.position.y = Math.max(0.1, f.m.position.y + f.vy * dt); f.m.position.z += f.vz * dt; f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); f.m.material.dispose(); fxList.splice(i, 1); } continue; } f.t += dt * 2.2; f.m.scale.setScalar(1 + f.t * f.max); f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); fxList.splice(i, 1); } }
   const ring = scene.getObjectByName('hqRing'); if (ring) ring.rotation.y += dt * 2;
   // camera
   const back = camera.aspect < 1 ? 1.15 : 0, tgt = new THREE.Vector3(me.x * 0.9, 30 + back * 8, me.z * 0.9 + 19 + back * 6);
   camPos.lerp(tgt, 1 - Math.exp(-6 * dt)); camera.position.copy(camPos); camera.lookAt(camPos.x * 0.98, 0, camPos.z - (19 + back * 6) * 0.98);
+  if ((frameN++ & 1) === 0) drawMini();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }

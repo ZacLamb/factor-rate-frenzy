@@ -15,7 +15,7 @@
 
 <!-- HUD -->
 <div id="hud" class="hidden">
-  <div id="timer"><span id="tphase">ROUND</span><b id="tval">2:30</b></div>
+  <div id="timer"><span id="tphase">ROUND</span><b id="tval">2:30</b><div id="tbar"><i></i></div></div>
   <div id="goal">🎯 Pay off your debt FIRST — or finish with the most cash after debt</div>
   <div id="books" class="card">
     <h4>YOUR ADVANCE</h4>
@@ -28,8 +28,11 @@
     <div class="row"><span>Swept to lender</span><b id="b-swept">$0</b></div>
     <div class="row" style="margin-top:4px"><span>Net worth</span><b id="b-net">$0</b></div>
     <div id="b-boost" class="chip hidden">2× SALES BOOST</div>
+    <div id="b-shield" class="chip blue hidden">🛡 LEGAL SHIELD</div>
+    <div id="b-cut" class="chip purple hidden">⏬ HOLDBACK HOLIDAY</div>
   </div>
   <div id="board" class="card"></div>
+  <canvas id="mini" width="300" height="300"></canvas>
   <div id="toast"></div>
   <div id="hint">Hold RIGHT-CLICK or WASD to move · aim with mouse · LEFT-CLICK (or F) fires a notice · SPACE surge</div>
   <div id="stickL" class="stick"><i></i></div>
@@ -61,6 +64,7 @@
         <li><b>You owe $6,750</b> on a $5,000 cash advance. Grab 🪙 coins (your sales) — <b>25% is auto-swept</b> to the lender.</li>
         <li><b>Be first to reach $0 owed</b> and the round ends. Otherwise the <b>highest net worth</b> (cash − debt) wins at 0:00.</li>
         <li>🔴 <b>STACK pods</b> = quick cash but a bigger debt. Tempting. Costly.</li>
+        <li>Power-ups: 🟢 <b>Payoff Discount</b> (−$600 debt) · 🔵 <b>Legal Shield</b> (blocks notices) · 🟣 <b>Holdback Holiday</b> (sweep drops to 40%).</li>
         <li>📄 <b>Collections Notices</b> (the flying red-stamped papers) are your "gun": a hit stuns a rival and makes them drop cash. Dodge theirs.</li>
       </ol>
     </div>

@@ -125,12 +125,12 @@ class MatchRoom extends Room {
   }
 
   mkPlayer(id, name, skin, bot) {
-    return { id, name, skin, bot, x: 0, z: 0, ang: 0, fire: false, stun: 0, immune: 0, fireCd: 0, surge: 0, surgeCd: 0, boost: 0,
+    return { id, name, skin, bot, x: 0, z: 0, ang: 0, fire: false, stun: 0, immune: 0, fireCd: 0, surge: 0, surgeCd: 0, boost: 0, shieldT: 0, hbCut: 0, acc: 0,
       owed: 0, cash: 0, hb: 0, swept: 0, stacks: 0, advance: 0, payback: 0, cleared: 0, rethink: 0, tgt: null, greedy: false };
   }
   resetStats(p) {
     p.owed = Math.round(R.ADVANCE * R.FACTOR); p.cash = R.ADVANCE; p.hb = R.HOLDBACK; p.swept = 0; p.stacks = 0;
-    p.advance = R.ADVANCE; p.payback = p.owed; p.cleared = 0; p.stun = 0; p.immune = 0; p.surge = 0; p.surgeCd = 0; p.boost = 0; p.fireCd = 0;
+    p.advance = R.ADVANCE; p.payback = p.owed; p.cleared = 0; p.stun = 0; p.immune = 0; p.surge = 0; p.surgeCd = 0; p.boost = 0; p.fireCd = 0; p.shieldT = 0; p.hbCut = 0;
   }
 
   onJoin(client, options) {
@@ -172,7 +172,7 @@ class MatchRoom extends Room {
       p.x = s.x; p.z = s.z;
       const c = this.clients.find((c) => c.sessionId === p.id); if (c) c.send('spawn', { x: p.x, z: p.z });
     });
-    this.orbs = []; this.bullets = []; this.tl = R.ROUND; this.elapsed = 0; this.stackT = 8;
+    this.orbs = []; this.bullets = []; this.tl = R.ROUND; this.elapsed = 0; this.stackT = 8; this.powT = 6;
     for (let i = 0; i < 26; i++) this.spawnOrb(0);
     this.phase = 'play';
     this.sendRoster();
@@ -203,15 +203,26 @@ class MatchRoom extends Room {
   collect(p, v, quiet) {
     const gross = Math.round(v * (p.boost > 0 ? 2 : 1));
     let sweep = 0;
-    if (p.owed > 0) sweep = Math.min(p.owed, Math.round(gross * p.hb));
+    if (p.owed > 0) sweep = Math.min(p.owed, Math.round(gross * (p.hbCut > 0 ? p.hb * 0.4 : p.hb)));
     p.owed -= sweep; p.swept += sweep; p.cash += gross - sweep;
     const c = this.clients.find((c) => c.sessionId === p.id);
     if (c && !quiet) c.send('gain', { g: gross, s: sweep, b: p.boost > 0 ? 1 : 0 });
+    this.clearCheck(p);
+  }
+
+  clearCheck(p) {
     if (p.owed <= 0 && !p.cleared) {
       p.cleared = Math.max(1, Math.round(this.elapsed)); p.cash += 2000;
       this.broadcast('fx', { k: 'free', id: p.id, n: p.name });
       this.endRound(p.id);
     }
+  }
+
+  takePower(p, k) {
+    if (k === 2) { const d = Math.min(p.owed, 600); p.owed -= d; p.swept += d; this.clearCheck(p); }
+    else if (k === 3) p.shieldT = 8;
+    else if (k === 4) p.hbCut = 10;
+    this.broadcast('fx', { k: 'pow', pk: k, id: p.id, n: p.name, x: p.x, z: p.z });
   }
 
   takeStack(p) {
@@ -240,12 +251,14 @@ class MatchRoom extends Room {
 
   updatePlay(dt) {
     this.elapsed += dt; this.tl -= dt;
-    this.spawnT -= dt; this.stackT -= dt;
+    this.spawnT -= dt; this.stackT -= dt; this.powT -= dt;
     if (this.spawnT <= 0) { this.spawnT = 0.55; if (this.orbs.filter((o) => o.k === 0).length < 34) this.spawnOrb(0); }
     if (this.stackT <= 0) { this.stackT = 11; if (this.orbs.filter((o) => o.k === 1).length < 2) this.spawnOrb(1, undefined, undefined, R.STACK_ADV); }
 
+    if (this.powT <= 0) { this.powT = 8; if (this.orbs.filter((o) => o.k >= 2).length < 3) this.spawnOrb(2 + Math.floor(Math.random() * 3), undefined, undefined, 0); }
     const list = [...this.players.values()];
     for (const p of list) {
+      p.shieldT = Math.max(0, p.shieldT - dt); p.hbCut = Math.max(0, p.hbCut - dt);
       p.stun = Math.max(0, p.stun - dt); p.immune = Math.max(0, p.immune - dt);
       p.fireCd = Math.max(0, p.fireCd - dt); p.surge = Math.max(0, p.surge - dt);
       p.surgeCd = Math.max(0, p.surgeCd - dt); p.boost = Math.max(0, p.boost - dt);
@@ -261,7 +274,7 @@ class MatchRoom extends Room {
       for (const q of list) {
         if (q.id === b.owner || q.immune > 0) continue;
         const dx = q.x - b.x, dz = q.z - b.z;
-        if (dx * dx + dz * dz < 1.3 * 1.3) { b.ttl = 0; this.hit(q, b); break; }
+        if (dx * dx + dz * dz < 1.3 * 1.3) { b.ttl = 0; if (q.shieldT > 0) this.broadcast('fx', { k: 'block', id: q.id, x: q.x, z: q.z }); else this.hit(q, b); break; }
       }
     }
     this.bullets = this.bullets.filter((b) => b.ttl > 0);
@@ -274,7 +287,7 @@ class MatchRoom extends Room {
         const dx = q.x - o.x, dz = q.z - o.z, d2 = dx * dx + dz * dz;
         if (d2 < rad * rad) {
           if (q.surge > 0 && o.k === 0 && d2 > 2.4) { const d = Math.sqrt(d2); o.x += (dx / d) * 16 * dt; o.z += (dz / d) * 16 * dt; }
-          else { o.dead = true; if (o.k === 1) this.takeStack(q); else this.collect(q, o.v); break; }
+          else { o.dead = true; if (o.k === 1) this.takeStack(q); else if (o.k >= 2) this.takePower(q, o.k); else this.collect(q, o.v); break; }
         }
       }
     }
@@ -342,7 +355,7 @@ class MatchRoom extends Room {
     const r2 = (n) => Math.round(n * 100) / 100;
     this.broadcast('snap', {
       ph: this.phase, tl: Math.max(0, Math.round(this.tl * 10) / 10),
-      p: [...this.players.values()].map((p) => [p.id, r2(p.x), r2(p.z), r2(p.ang), r2(p.stun), p.owed, p.cash, r2(p.hb), r2(p.boost), r2(p.surge), r2(p.surgeCd), p.swept, p.stacks]),
+      p: [...this.players.values()].map((p) => [p.id, r2(p.x), r2(p.z), r2(p.ang), r2(p.stun), p.owed, p.cash, r2(p.hb), r2(p.boost), r2(p.surge), r2(p.surgeCd), p.swept, p.stacks, r2(p.shieldT), r2(p.hbCut)]),
       o: this.orbs.map((o) => [o.id, r2(o.x), r2(o.z), o.v, o.k]),
       b: this.bullets.map((b) => [b.id, r2(b.x), r2(b.z), r2(Math.atan2(b.vx, b.vz))]),
     });
