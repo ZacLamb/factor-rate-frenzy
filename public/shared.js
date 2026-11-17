@@ -58,11 +58,11 @@ export const RULES = {
 /* ---- Career progression: "Top Rep" ranks ---- */
 export const RANKS = [
   { n: 'Intern Rep', xp: 0, i: '🧑‍💼', perk: 'Learning the ropes' },
-  { n: 'Sales Rep', xp: 150, i: '📞', perk: '+5% move speed' },
-  { n: 'Closer', xp: 400, i: '🤝', perk: '+5% sales per coin' },
-  { n: 'Senior Rep', xp: 800, i: '💼', perk: 'Notices recharge 10% faster' },
-  { n: 'Account Exec', xp: 1400, i: '🏆', perk: '+$500 starting cash, Surge recharges 2s faster' },
-  { n: 'Top Rep', xp: 2200, i: '👑', perk: '+5% more sales, gold crown & name' },
+  { n: 'Sales Rep', xp: 200, i: '📞', perk: '+5% move speed' },
+  { n: 'Closer', xp: 600, i: '🤝', perk: '+5% sales per coin' },
+  { n: 'Senior Rep', xp: 1300, i: '💼', perk: 'Notices recharge 10% faster' },
+  { n: 'Account Exec', xp: 2300, i: '🏆', perk: '+$500 starting cash, Surge recharges 2s faster' },
+  { n: 'Top Rep', xp: 3600, i: '👑', perk: '+5% more sales, gold crown & name' },
 ];
 export function levelFor(xp) { let l = 0; for (let i = 0; i < RANKS.length; i++) if (xp >= RANKS[i].xp) l = i; return l; }
 export function perks(l) {

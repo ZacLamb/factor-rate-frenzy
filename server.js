@@ -396,12 +396,12 @@ class MatchRoom extends Room {
     for (const p of [...this.players.values()]) {
       if (p.bot) continue;
       const r = res.find((x) => x.id === p.id); if (!r) continue;
-      const parts = [['Played a match', 50]];
-      if (p.cleared) parts.push(['Debt-free!', 150]);
-      if (p.id === topId) parts.push(['Top of the leaderboard', 100]);
-      if (r.net > 0) parts.push(['Positive net worth', Math.min(150, Math.floor(r.net / 50))]);
-      if (p.hits) parts.push([`${p.hits} notice hit${p.hits > 1 ? 's' : ''}`, Math.min(100, p.hits * 8)]);
-      if (!p.stacks) parts.push(['No stacking — kept costs fixed', 40]);
+      const parts = [['Played a match', 25]];
+      if (p.cleared) parts.push(['Debt-free!', 60]);
+      if (p.id === topId) parts.push(['Top of the leaderboard', 40]);
+      if (r.net > 0) parts.push(['Positive net worth', Math.min(50, Math.floor(r.net / 150))]);
+      if (p.hits) parts.push([`${p.hits} notice hit${p.hits > 1 ? 's' : ''}`, Math.min(30, p.hits * 3)]);
+      if (!p.stacks) parts.push(['No stacking — kept costs fixed', 15]);
       const gain = parts.reduce((s, x) => s + x[1], 0), oldLv = p.lv;
       await addXp(p.pid, p.name, gain);
       p.xp += gain; p.lv = levelFor(p.xp);
