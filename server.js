@@ -108,7 +108,11 @@ class MatchRoom extends Room {
       const p = this.players.get(c.sessionId); if (!p || !m) return;
       if (Number.isFinite(m.x) && Number.isFinite(m.z)) { p.x = Math.max(-ARENA, Math.min(ARENA, m.x)); p.z = Math.max(-ARENA, Math.min(ARENA, m.z)); }
       if (Number.isFinite(m.a)) p.ang = m.a;
-      p.fire = !!m.f;
+    });
+    this.onMessage('fire', (c, m) => {
+      const p = this.players.get(c.sessionId); if (!p || this.phase !== 'play' || p.fireCd > 0 || p.stun > 0) return;
+      if (m && Number.isFinite(m.a)) p.ang = m.a;
+      this.shoot(p);
     });
     this.onMessage('ab', (c) => { const p = this.players.get(c.sessionId); if (p) this.useSurge(p); });
     this.onMessage('start', (c) => { if (c.sessionId === this.hostId && this.phase === 'lobby') this.startRound(); });

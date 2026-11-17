@@ -197,26 +197,30 @@ const keys = {}; let mouseNdc = { x: 0, y: 0 }, mouseDown = false;
 const stick = { L: { id: null, x: 0, y: 0 }, R: { id: null, x: 0, y: 0 } };
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
-  keys[e.code] = true; if (e.code === 'Space') { e.preventDefault(); ability(); }
+  keys[e.code] = true; if (e.code === 'Space') { e.preventDefault(); ability(); } if (e.code === 'KeyF' && !e.repeat) fireNotice();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('mousemove', (e) => { mouseNdc = { x: (e.clientX / innerWidth) * 2 - 1, y: -(e.clientY / innerHeight) * 2 + 1 }; });
 let rightDown = false;
 addEventListener('contextmenu', (e) => { if (e.target.id === 'c') e.preventDefault(); });
-$('#c').addEventListener('mousedown', (e) => { if (e.button === 2) rightDown = true; else mouseDown = true; });
-addEventListener('mouseup', (e) => { if (e.button === 2) rightDown = false; else mouseDown = false; });
+$('#c').addEventListener('mousedown', (e) => { if (e.button === 2) rightDown = true; else fireNotice(); });
+addEventListener('mouseup', (e) => { if (e.button === 2) rightDown = false; });
 function bindStick(name, el) {
   const s = stick[name];
   const set = (e) => { const r = el.getBoundingClientRect(); let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2), dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2); const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } s.x = dx; s.y = dy; el.firstElementChild.style.transform = `translate(${dx * 38}px,${dy * 38}px)`; };
   el.addEventListener('pointerdown', (e) => { s.id = e.pointerId; el.setPointerCapture(e.pointerId); set(e); });
   el.addEventListener('pointermove', (e) => { if (e.pointerId === s.id) set(e); });
-  const end = (e) => { if (e.pointerId === s.id) { s.id = null; s.x = s.y = 0; el.firstElementChild.style.transform = ''; } };
+  const end = (e) => { if (e.pointerId === s.id) { if (name === 'R' && Math.hypot(s.x, s.y) > 0.3) fireNotice(); s.id = null; s.x = s.y = 0; el.firstElementChild.style.transform = ''; } };
   el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
 }
 bindStick('L', $('#stickL')); bindStick('R', $('#stickR'));
 $('#abBtn').addEventListener('pointerdown', (e) => { e.preventDefault(); ability(); });
 const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3();
-let wantFire = false;
+let wantFire = false, lastFire = -9;
+function fireNotice() {
+  if (!room || phase !== 'play' || me.stun > 0 || performance.now() - lastFire < 600) return;
+  lastFire = performance.now(); room.send('fire', { a: +me.ang.toFixed(3) }); beep(420, 0.08, 'square', 0.03, 260);
+}
 function ability() { if (room && phase === 'play' && me.surgeCd <= 0 && me.stun <= 0) { room.send('ab'); beep(500, 0.2, 'sawtooth', 0.04, 900); } }
 
 /* ---------- network ---------- */
@@ -243,7 +247,7 @@ async function connect() {
   room.onMessage('results', onResults);
   setInterval(sendInput, 50);
 }
-function sendInput() { if (room) room.send('in', { x: +me.x.toFixed(2), z: +me.z.toFixed(2), a: +me.ang.toFixed(3), f: wantFire }); }
+function sendInput() { if (room) room.send('in', { x: +me.x.toFixed(2), z: +me.z.toFixed(2), a: +me.ang.toFixed(3), f: false }); }
 function onSnap(s) {
   const prev = phase; snap = s; phase = s.ph;
   const seen = new Set();
@@ -369,6 +373,8 @@ function resize() {
   camera.aspect = w / h; camera.fov = w / h < 1 ? 70 : 50; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
+const aimLine = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 15).rotateX(-Math.PI / 2).translate(0, 0, 8.5), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.55, depthWrite: false }));
+aimLine.position.y = 0.12; aimLine.visible = false; scene.add(aimLine);
 const clock = new THREE.Clock(); let t = 0;
 const camPos = new THREE.Vector3(0, 30, 20);
 function frame() {
@@ -392,14 +398,15 @@ function frame() {
     r = resolve(me.x, me.z + mz * sp, 0.9); me.x = r.x; me.z = r.z;
     // aim
     const sr = stick.R; wantFire = false;
-    if (sr.id !== null && Math.hypot(sr.x, sr.y) > 0.25) { me.ang = Math.atan2(sr.x, sr.y); wantFire = true; }
+    if (sr.id !== null && Math.hypot(sr.x, sr.y) > 0.25) { me.ang = Math.atan2(sr.x, sr.y); }
     else if (!touch) {
       ray.setFromCamera(mouseNdc, camera);
       if (ray.ray.intersectPlane(plane, hitP)) me.ang = Math.atan2(hitP.x - me.x, hitP.z - me.z);
-      wantFire = mouseDown;
     } else if (l > 0.2) me.ang = Math.atan2(mx, mz);
     if (phase !== 'play') wantFire = false;
   }
+  { const show = phase === 'play' && me.stun <= 0 && (!touch || stick.R.id !== null); aimLine.visible = show;
+    if (show) { aimLine.position.x = me.x; aimLine.position.z = me.z; aimLine.rotation.y = me.ang; const rdy = performance.now() - lastFire >= 600; aimLine.material.color.set(rdy ? 0xffc83d : 0x777777); aimLine.material.opacity = rdy ? 0.6 : 0.25; } }
   // my character
   if (myId && roster.has(myId)) {
     const c = ensureChar(myId); c.g.visible = true;
