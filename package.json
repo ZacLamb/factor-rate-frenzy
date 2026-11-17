@@ -1,0 +1,15 @@
+{
+  "name": "factor-rate-frenzy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "3D multiplayer browser game that teaches Merchant Cash Advance basics",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@colyseus/core": "^0.16.0",
+    "@colyseus/ws-transport": "^0.16.0",
+    "colyseus.js": "^0.16.0",
+    "three": "0.170.0"
+  }
+}

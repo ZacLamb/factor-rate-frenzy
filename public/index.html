@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Factor Rate Frenzy — the Merchant Cash Advance game</title>
+<meta name="description" content="A 3D multiplayer brawl where you learn how merchant cash advances really work: factor rates, holdbacks and stacking. Play free with friends.">
+<meta property="og:title" content="Factor Rate Frenzy">
+<meta property="og:description" content="Dodge the holdback. Don't stack. A 3D multiplayer game that teaches merchant cash advances.">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="timer"><span id="tphase">ROUND</span><b id="tval">2:30</b></div>
+  <div id="books" class="card">
+    <h4>YOUR ADVANCE</h4>
+    <div class="row"><span>Advance</span><b>$5,000</b></div>
+    <div class="row"><span>Factor rate</span><b>1.35×</b></div>
+    <div class="row"><span>Still owed</span><b id="b-owed" class="red">$6,750</b></div>
+    <div class="bar"><i id="b-bar"></i></div>
+    <div class="row"><span>Holdback / sale</span><b id="b-hb" class="gold">25%</b></div>
+    <div class="row"><span>Take-home cash</span><b id="b-cash" class="green">$5,000</b></div>
+    <div class="row"><span>Swept to lender</span><b id="b-swept">$0</b></div>
+    <div id="b-boost" class="chip hidden">2× SALES BOOST</div>
+  </div>
+  <div id="board" class="card"></div>
+  <div id="toast"></div>
+  <div id="hint">WASD move · mouse aim · click shoot · SPACE Sales Surge</div>
+  <div id="stickL" class="stick"><i></i></div>
+  <div id="stickR" class="stick"><i></i></div>
+  <button id="abBtn" class="ab">SURGE</button>
+</div>
+
+<!-- Email gate -->
+<div id="gate" class="overlay hidden">
+  <form class="panel" id="gateForm" autocomplete="on">
+    <div class="logo">FACTOR<br>RATE<br>FRENZY</div>
+    <p class="sub">Merchant cash advances are fast, expensive and confusing. Play a 2-minute brawl and learn how factor rates, holdbacks and stacking really work.</p>
+    <label>Your name<input id="gName" name="name" maxlength="14" placeholder="Merchant name" required autocomplete="name"></label>
+    <label>Email to unlock play<input id="gEmail" name="email" type="email" placeholder="you@business.com" required autocomplete="email" inputmode="email"></label>
+    <button class="btn" id="gBtn" type="submit">UNLOCK PLAY ▶</button>
+    <div class="err" id="gErr"></div>
+    <small>We'll email your match recap and new maps. No spam, unsubscribe anytime.</small>
+  </form>
+</div>
+
+<!-- Lobby -->
+<div id="lobby" class="overlay hidden">
+  <div class="panel">
+    <h2>MAIN STREET LOBBY</h2>
+    <p class="sub" id="lobbyTip"></p>
+    <div class="skins" id="skins"></div>
+    <div id="roster"></div>
+    <div class="share">
+      <input id="shareLink" readonly>
+      <button class="btn small" id="copyBtn">COPY LINK</button>
+    </div>
+    <button class="btn" id="startBtn">START MATCH ▶</button>
+    <small id="waitMsg" class="hidden">Waiting for the host to start… (you can run around meanwhile)</small>
+    <small>Bots fill empty seats up to 4. Send the link — friends join the same match.</small>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="results" class="overlay hidden">
+  <div class="panel wide">
+    <h2 id="resTitle">ROUND OVER</h2>
+    <div id="resList"></div>
+    <div id="resLesson" class="lesson"></div>
+    <button class="btn" id="resBtn">BACK TO LOBBY</button>
+  </div>
+</div>
+
+<div id="msg" class="overlay hidden"><div class="panel"><h2 id="msgT"></h2><p class="sub" id="msgP"></p><button class="btn" onclick="location.reload()">RELOAD</button></div></div>
+<script src="/vendor/colyseus.js"></script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
