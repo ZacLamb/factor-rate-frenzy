@@ -168,7 +168,7 @@ for (const b of SHOPS) {
 }
 // "Powered by Fundara" banners on the north and south walls
 for (const z of [-ARENA - 1.05, ARENA + 1.05]) {
-  const bn = new THREE.Mesh(new THREE.PlaneGeometry(26, 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.3, 1.3), map: canvasTex(1024, 80, (g, w, h) => { g.fillStyle = '#12142a'; g.fillRect(0, 0, w, h); g.fillStyle = '#9aa1c6'; g.font = '600 26px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('P O W E R E D   B Y', w * 0.36, h / 2); g.fillStyle = '#ffc83d'; g.font = '900 44px system-ui'; g.fillText('FUNDARA', w * 0.64, h / 2 + 2); }) }));
+  const bn = new THREE.Mesh(new THREE.PlaneGeometry(26, 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.3, 1.3), map: canvasTex(1024, 80, (g, w, h) => { g.fillStyle = '#12142a'; g.fillRect(0, 0, w, h); g.fillStyle = '#9aa1c6'; g.font = '600 26px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('P O W E R E D   B Y', w * 0.36, h / 2); g.fillStyle = '#1fd1a5'; g.font = '900 44px system-ui'; g.fillText('FUNDARA', w * 0.64, h / 2 + 2); }) }));
   bn.position.set(0, 1.2, z); if (z > 0) bn.rotation.y = Math.PI; scene.add(bn);
 }
 // wall neon strip, lamps, trees, skyline
