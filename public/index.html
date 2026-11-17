@@ -54,6 +54,7 @@
       <div><i>👑</i><b>Climb to Top Rep</b><small>Pay your debt off first, earn XP and unlock bonuses.</small></div>
     </div>
     <button class="btn big" id="playBtn">PLAY NOW ▶</button>
+    <button class="linkbtn" id="lbIntro">🏆 Global leaderboard</button>
     <small class="meta">Free · 2½-minute rounds · Phone or desktop · Play with friends via link</small>
     <div class="powered">POWERED BY <a class="fundara" href="https://fundara.co" target="_blank" rel="noopener">FUNDARA</a></div>
   </div>
@@ -96,7 +97,7 @@
       <input id="shareLink" readonly>
       <button class="btn small" id="copyBtn">COPY LINK</button>
     </div>
-    <div class="actions"><button class="btn small ghost" id="qBtn">⚙</button>
+    <div class="actions"><button class="btn small ghost" id="qBtn">⚙</button><button class="btn small ghost" id="lbBtn" title="Global leaderboard">🏆</button>
     <button class="btn" id="startBtn">START MATCH ▶</button></div>
     <small id="waitMsg" class="hidden">Waiting for the host to start… (you can run around meanwhile)</small>
     <small class="botnote">Bots fill empty seats. Send the link — friends join your match.</small>
@@ -117,6 +118,12 @@
 </div>
 
 <div id="banner" class="hidden"></div>
+<div id="lbPanel" class="overlay hidden" style="z-index:20"><div class="panel">
+  <h2>🏆 GLOBAL LEADERBOARD</h2>
+  <div id="lbList"><small>Loading…</small></div>
+  <div id="lbMe"></div>
+  <button class="btn" id="lbClose">CLOSE</button>
+</div></div>
 <div id="msg" class="overlay hidden"><div class="panel"><h2 id="msgT"></h2><p class="sub" id="msgP"></p><button class="btn" onclick="location.reload()">RELOAD</button></div></div>
 <script src="/vendor/colyseus.js"></script>
 <script type="module" src="main.js"></script>

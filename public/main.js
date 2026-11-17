@@ -613,6 +613,17 @@ function onXp(x) {
   $('#resXp').classList.remove('hidden');
   if (x.up) beep(600, 0.5, 'triangle', 0.06, 1200);
 }
+async function openLeaderboard() {
+  $('#lbPanel').classList.remove('hidden'); $('#lbList').innerHTML = '<small>Loading…</small>'; $('#lbMe').innerHTML = '';
+  try {
+    const d = await (await fetch('/api/leaderboard?pid=' + encodeURIComponent(pid))).json();
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    $('#lbList').innerHTML = d.top.length ? d.top.map((r) => `<div class="pl ${r.me ? 'me' : ''}"><span class="no">${r.r}</span><span>${RANKS[levelFor(r.xp)].i}</span>${esc(r.n)}<b>${r.xp.toLocaleString()} XP</b><small>${r.m} matches · ${r.w} wins</small></div>`).join('') : '<small>No ranked players yet. Finish a match to get on the board!</small>';
+    if (d.me && d.me.r > 20) $('#lbMe').innerHTML = `<div class="pl"><span class="no">${d.me.r}</span>You<b>${d.me.xp.toLocaleString()} XP</b></div>`;
+    else if (!d.me) $('#lbMe').innerHTML = '<small>Finish a match to join the ranking.</small>';
+  } catch { $('#lbList').innerHTML = '<small>Could not load the leaderboard. Try again.</small>'; }
+}
+$('#lbBtn').onclick = openLeaderboard; $('#lbIntro').onclick = openLeaderboard; $('#lbClose').onclick = () => $('#lbPanel').classList.add('hidden');
 function showMsg(t, p) { $('#msgT').textContent = t; $('#msgP').textContent = p; $('#msg').classList.remove('hidden'); }
 
 /* ---------- gate ---------- */

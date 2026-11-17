@@ -33,7 +33,8 @@ async function saveLead(row) {
   fs.appendFileSync(LEADS, JSON.stringify(row) + '\n');
 }
 const PROG = path.join(DATA_DIR, 'progress.json');
-if (pool) pool.query(`CREATE TABLE IF NOT EXISTS progress (pid TEXT PRIMARY KEY, name TEXT, xp INT NOT NULL DEFAULT 0, matches INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())`).catch((e) => console.error('progress init', e.message));
+if (pool) pool.query(`CREATE TABLE IF NOT EXISTS progress (pid TEXT PRIMARY KEY, name TEXT, xp INT NOT NULL DEFAULT 0, matches INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())`)
+  .then(() => pool.query('ALTER TABLE progress ADD COLUMN IF NOT EXISTS wins INT NOT NULL DEFAULT 0')).catch((e) => console.error('progress init', e.message));
 const readProg = () => { try { return JSON.parse(fs.readFileSync(PROG, 'utf8')); } catch { return {}; } };
 async function loadXp(pid) {
   if (!pid) return 0;
@@ -42,12 +43,21 @@ async function loadXp(pid) {
     return readProg()[pid]?.xp || 0;
   } catch { return 0; }
 }
-async function addXp(pid, name, gain) {
+async function addXp(pid, name, gain, win = 0) {
   if (!pid) return;
   try {
-    if (pool) await pool.query('INSERT INTO progress (pid,name,xp,matches) VALUES ($1,$2,$3,1) ON CONFLICT (pid) DO UPDATE SET xp = progress.xp + $3, matches = progress.matches + 1, name = $2, updated_at = now()', [pid, name, gain]);
-    else { const d = readProg(); d[pid] = { name, xp: (d[pid]?.xp || 0) + gain }; fs.writeFileSync(PROG, JSON.stringify(d)); }
+    if (pool) await pool.query('INSERT INTO progress (pid,name,xp,matches,wins) VALUES ($1,$2,$3,1,$4) ON CONFLICT (pid) DO UPDATE SET xp = progress.xp + $3, matches = progress.matches + 1, wins = progress.wins + $4, name = $2, updated_at = now()', [pid, name, gain, win]);
+    else { const d = readProg(); d[pid] = { name, xp: (d[pid]?.xp || 0) + gain, matches: (d[pid]?.matches || 0) + 1, wins: (d[pid]?.wins || 0) + win }; fs.writeFileSync(PROG, JSON.stringify(d)); }
   } catch (e) { console.error('addXp', e.message); }
+}
+let lbCache = { t: 0, rows: [] };
+async function topPlayers() {
+  if (Date.now() - lbCache.t < 8000) return lbCache.rows;
+  let rows;
+  if (pool) rows = (await pool.query('SELECT pid, name, xp, matches, wins FROM progress ORDER BY xp DESC, matches ASC LIMIT 200')).rows;
+  else rows = Object.entries(readProg()).map(([pid, r]) => ({ pid, name: r.name, xp: r.xp || 0, matches: r.matches || 0, wins: r.wins || 0 })).sort((a, b) => b.xp - a.xp || a.matches - b.matches).slice(0, 200);
+  lbCache = { t: Date.now(), rows };
+  return rows;
 }
 async function loadLeads() {
   if (pool) return (await pool.query('SELECT created_at, name, email, ref FROM leads ORDER BY id')).rows.map((r) => ({ ts: new Date(r.created_at).toISOString(), name: r.name, email: r.email, ref: r.ref }));
@@ -78,6 +88,16 @@ function handler(req, res) {
         res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"ok":false,"error":"invalid"}');
       }
     });
+    return;
+  }
+
+  if (url.pathname === '/api/leaderboard') {
+    topPlayers().then((rows) => {
+      const pid = String(url.searchParams.get('pid') || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
+      const idx = pid ? rows.findIndex((r) => r.pid === pid) : -1;
+      const out = { top: rows.slice(0, 20).map((r, i) => ({ r: i + 1, n: r.name, xp: r.xp, m: r.matches, w: r.wins, me: r.pid === pid ? 1 : 0 })), me: idx >= 0 ? { r: idx + 1, xp: rows[idx].xp, m: rows[idx].matches, w: rows[idx].wins } : null, total: rows.length };
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(out));
+    }).catch(() => { res.writeHead(500); res.end('{}'); });
     return;
   }
 
@@ -403,7 +423,7 @@ class MatchRoom extends Room {
       if (p.hits) parts.push([`${p.hits} notice hit${p.hits > 1 ? 's' : ''}`, Math.min(30, p.hits * 3)]);
       if (!p.stacks) parts.push(['No stacking — kept costs fixed', 15]);
       const gain = parts.reduce((s, x) => s + x[1], 0), oldLv = p.lv;
-      await addXp(p.pid, p.name, gain);
+      await addXp(p.pid, p.name, gain, p.id === topId ? 1 : 0);
       p.xp += gain; p.lv = levelFor(p.xp);
       const c = this.clients.find((c) => c.sessionId === p.id);
       if (c) c.send('xp', { parts, gain, xp: p.xp, lv: p.lv, up: p.lv > oldLv });
