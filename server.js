@@ -22,6 +22,7 @@ const VENDOR = {
 };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const hits = new Map();
+const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 8) || Date.now().toString(36);
 const DB_URL = process.env.DATABASE_URL;
 const pool = DB_URL ? new pg.Pool({ connectionString: DB_URL, ssl: /railway\.internal|localhost/.test(DB_URL) ? false : { rejectUnauthorized: false } }) : null;
 if (pool) pool.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT now(), name TEXT NOT NULL, email TEXT NOT NULL, ref TEXT DEFAULT '')`)
@@ -104,7 +105,11 @@ function handler(req, res) {
   }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404); res.end('not found'); return; }
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
+    // Cache-bust every deploy: version the asset URLs so browsers/CDNs never serve a stale build
+    const name = path.basename(file);
+    if (name === 'index.html') buf = Buffer.from(buf.toString().replace('href="style.css"', `href="style.css?v=${BUILD}"`).replace('src="main.js"', `src="main.js?v=${BUILD}"`));
+    else if (name === 'main.js') buf = Buffer.from(buf.toString().replace("from './shared.js'", `from './shared.js?v=${BUILD}'`));
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': name === 'index.html' ? 'no-store' : 'public, max-age=3600' });
     res.end(buf);
   });
 }
