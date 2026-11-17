@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import pg from 'pg';
 import { Server, Room } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { ARENA, resolve, RULES } from './public/shared.js';
@@ -21,6 +22,19 @@ const VENDOR = {
 };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const hits = new Map();
+const DB_URL = process.env.DATABASE_URL;
+const pool = DB_URL ? new pg.Pool({ connectionString: DB_URL, ssl: /railway\.internal|localhost/.test(DB_URL) ? false : { rejectUnauthorized: false } }) : null;
+if (pool) pool.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT now(), name TEXT NOT NULL, email TEXT NOT NULL, ref TEXT DEFAULT '')`)
+  .then(() => console.log('leads table ready')).catch((e) => console.error('DB init failed', e.message));
+async function saveLead(row) {
+  console.log('LEAD', JSON.stringify(row));
+  if (pool) { await pool.query('INSERT INTO leads (name,email,ref) VALUES ($1,$2,$3)', [row.name, row.email, row.ref]); return; }
+  fs.appendFileSync(LEADS, JSON.stringify(row) + '\n');
+}
+async function loadLeads() {
+  if (pool) return (await pool.query('SELECT created_at, name, email, ref FROM leads ORDER BY id')).rows.map((r) => ({ ts: new Date(r.created_at).toISOString(), name: r.name, email: r.email, ref: r.ref }));
+  return fs.existsSync(LEADS) ? fs.readFileSync(LEADS, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+}
 
 function handler(req, res) {
   const url = new URL(req.url, 'http://x');
@@ -33,15 +47,14 @@ function handler(req, res) {
     if (n > 20) { res.writeHead(429); res.end('{"ok":false}'); return; }
     let body = '';
     req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const j = JSON.parse(body);
         const name = String(j.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 40);
         const email = String(j.email || '').trim().toLowerCase().slice(0, 120);
         if (!name || !EMAIL_RE.test(email)) throw new Error('invalid');
         const row = { ts: new Date().toISOString(), name, email, ref: String(j.ref || '').slice(0, 60) };
-        fs.appendFileSync(LEADS, JSON.stringify(row) + '\n');
-        console.log('LEAD', JSON.stringify(row));
+        await saveLead(row);
         res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
       } catch {
         res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"ok":false,"error":"invalid"}');
@@ -51,11 +64,13 @@ function handler(req, res) {
   }
 
   if (url.pathname === '/api/leads') {
+    (async () => {
     if (!ADMIN_KEY || url.searchParams.get('key') !== ADMIN_KEY) { res.writeHead(403); res.end('forbidden'); return; }
-    const rows = fs.existsSync(LEADS) ? fs.readFileSync(LEADS, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+    const rows = await loadLeads();
     const esc = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     res.writeHead(200, { 'content-type': 'text/csv' });
     res.end('timestamp,name,email,ref\n' + rows.map((r) => [r.ts, r.name, r.email, r.ref].map(esc).join(',')).join('\n'));
+    })().catch(() => { res.writeHead(500); res.end('error'); });
     return;
   }
 

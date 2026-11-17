@@ -196,8 +196,10 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('mousemove', (e) => { mouseNdc = { x: (e.clientX / innerWidth) * 2 - 1, y: -(e.clientY / innerHeight) * 2 + 1 }; });
-$('#c').addEventListener('mousedown', () => { mouseDown = true; });
-addEventListener('mouseup', () => { mouseDown = false; });
+let rightDown = false;
+addEventListener('contextmenu', (e) => { if (e.target.id === 'c') e.preventDefault(); });
+$('#c').addEventListener('mousedown', (e) => { if (e.button === 2) rightDown = true; else mouseDown = true; });
+addEventListener('mouseup', (e) => { if (e.button === 2) rightDown = false; else mouseDown = false; });
 function bindStick(name, el) {
   const s = stick[name];
   const set = (e) => { const r = el.getBoundingClientRect(); let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2), dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2); const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } s.x = dx; s.y = dy; el.firstElementChild.style.transform = `translate(${dx * 38}px,${dy * 38}px)`; };
@@ -264,8 +266,12 @@ function onSnap(s) {
   if (prev !== phase) onPhase(prev);
   updateHud();
 }
+function showBanner(t, p) {
+  const b = $('#banner'); b.classList.add('hidden'); void b.offsetWidth; b.innerHTML = `<h1>${t}</h1><p>${p}</p>`; b.style.animation = 'none'; void b.offsetWidth; b.style.animation = ''; b.classList.remove('hidden');
+  setTimeout(() => b.classList.add('hidden'), 4900);
+}
 function onPhase(prev) {
-  if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); toast('Collect sales orbs. Holdback gets swept. Avoid STACK pods… or don\'t.', 'gold'); beep(660, 0.3, 'square', 0.04, 990); }
+  if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner('PAY OFF YOUR ADVANCE FIRST', 'You owe $6,750. Grab coins — 25% of each is swept to the lender. First to $0 wins, otherwise highest net worth at 0:00. Avoid the red STACK pods.'); beep(660, 0.3, 'square', 0.04, 990); }
   else if (phase === 'lobby') { $('#hud').classList.add('hidden'); if ($('#results').classList.contains('hidden')) $('#lobby').classList.remove('hidden'); renderLobby(); }
   else if (phase === 'results') { /* panel opened by 'results' message */ }
 }
@@ -292,6 +298,7 @@ function updateHud() {
   $('#b-hb').textContent = Math.round(me.hb * 100) + '%';
   const pay = me.swept + (me.owed <= 0 ? 0 : 0); const total = me.swept + me.owed;
   $('#b-bar').style.width = (total ? (pay / total) * 100 : 0) + '%';
+  $('#b-net').textContent = money(me.cash - me.owed); $('#b-net').className = me.cash - me.owed >= 0 ? 'green' : 'red';
   $('#b-boost').classList.toggle('hidden', !(me.boost > 0));
   $('#abBtn').classList.toggle('cd', me.surgeCd > 0); $('#abBtn').textContent = me.surgeCd > 0 ? Math.ceil(me.surgeCd) : 'SURGE';
   const now = performance.now(); if (now - lastBoard < 300) return; lastBoard = now;
@@ -368,6 +375,12 @@ function frame() {
     if (keys.KeyW || keys.ArrowUp) mz -= 1; if (keys.KeyS || keys.ArrowDown) mz += 1;
     if (keys.KeyA || keys.ArrowLeft) mx -= 1; if (keys.KeyD || keys.ArrowRight) mx += 1;
     mx += stick.L.x; mz += stick.L.y;
+    if (!touch) {
+      ray.setFromCamera(mouseNdc, camera);
+      if (ray.ray.intersectPlane(plane, hitP)) {
+        if (rightDown) { const dx = hitP.x - me.x, dz = hitP.z - me.z, d = Math.hypot(dx, dz); if (d > 1.2) { mx += dx / d; mz += dz / d; } }
+      }
+    }
     const l = Math.hypot(mx, mz); if (l > 1) { mx /= l; mz /= l; }
     const sp = (me.stun > 0 ? 0 : cfg.SPEED * (me.surge > 0 ? 1.5 : 1)) * dt;
     let r = resolve(me.x + mx * sp, me.z, 0.9); me.x = r.x; me.z = r.z;

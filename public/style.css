@@ -38,7 +38,7 @@ small{color:#8990aa;font-size:12px;line-height:1.4}
 #board{position:absolute;top:max(10px,env(safe-area-inset-top));right:10px;width:170px;font-size:12px}
 .brow{display:flex;gap:6px;align-items:center;padding:2px 0;white-space:nowrap}.brow span{overflow:hidden;text-overflow:ellipsis;flex:1}.brow b{font-variant-numeric:tabular-nums;font-size:11px}
 .brow.me{color:var(--gold)}
-#toast{position:absolute;top:84px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(92vw,420px)}
+#toast{position:absolute;top:118px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(92vw,420px)}
 .t{background:rgba(10,12,20,.88);border:1px solid var(--line);padding:8px 14px;border-radius:12px;font-size:13px;text-align:center;animation:tin .25s,tout .4s 3.6s forwards}
 .t.bad{border-color:var(--red)}.t.good{border-color:var(--green)}.t.gold{border-color:var(--gold)}
 @keyframes tin{from{opacity:0;transform:translateY(-8px)}}@keyframes tout{to{opacity:0}}
@@ -56,3 +56,11 @@ body.touch #board{display:none}
 #resList .pl b{margin-left:auto;font-variant-numeric:tabular-nums}
 .lesson{background:rgba(255,200,61,.1);border:1px solid rgba(255,200,61,.4);border-radius:12px;padding:12px;font-size:13px;line-height:1.5;color:#f3e6bd}
 .lesson b{color:var(--gold)}
+
+.how{background:rgba(255,200,61,.08);border:1px solid rgba(255,200,61,.35);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;color:#e8e3cf}
+.how b:first-child{color:var(--gold);letter-spacing:1px;font-size:12px}.how ol{margin:6px 0 0;padding-left:18px}.how li{margin:3px 0}
+#goal{position:absolute;top:calc(max(10px,env(safe-area-inset-top)) + 62px);left:50%;transform:translateX(-50%);max-width:min(92vw,520px);text-align:center;font-size:12px;font-weight:700;color:var(--gold);background:var(--card);border:1px solid rgba(255,200,61,.4);border-radius:10px;padding:5px 12px}
+#banner{position:fixed;inset:0;z-index:8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none;text-align:center;padding:20px;animation:bout .6s 4.2s forwards;text-shadow:0 4px 20px #000}
+#banner h1{margin:0;font-size:clamp(32px,8vw,64px);color:var(--gold);letter-spacing:2px}#banner p{margin:0;font-size:clamp(15px,3.6vw,22px);max-width:640px;line-height:1.4}
+@keyframes bout{to{opacity:0}}
+@media(max-width:520px){#goal{top:calc(max(10px,env(safe-area-inset-top)) + 58px);font-size:11px;left:auto;right:10px;transform:none;max-width:44vw;text-align:left}}

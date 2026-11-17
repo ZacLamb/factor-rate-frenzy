@@ -16,6 +16,7 @@
 <!-- HUD -->
 <div id="hud" class="hidden">
   <div id="timer"><span id="tphase">ROUND</span><b id="tval">2:30</b></div>
+  <div id="goal">🎯 Pay off your debt FIRST — or finish with the most cash after debt</div>
   <div id="books" class="card">
     <h4>YOUR ADVANCE</h4>
     <div class="row"><span>Advance</span><b>$5,000</b></div>
@@ -25,11 +26,12 @@
     <div class="row"><span>Holdback / sale</span><b id="b-hb" class="gold">25%</b></div>
     <div class="row"><span>Take-home cash</span><b id="b-cash" class="green">$5,000</b></div>
     <div class="row"><span>Swept to lender</span><b id="b-swept">$0</b></div>
+    <div class="row" style="margin-top:4px"><span>Net worth</span><b id="b-net">$0</b></div>
     <div id="b-boost" class="chip hidden">2× SALES BOOST</div>
   </div>
   <div id="board" class="card"></div>
   <div id="toast"></div>
-  <div id="hint">WASD move · mouse aim · click shoot · SPACE Sales Surge</div>
+  <div id="hint">Hold RIGHT-CLICK or WASD to move · aim with mouse · LEFT-CLICK shoot · SPACE surge</div>
   <div id="stickL" class="stick"><i></i></div>
   <div id="stickR" class="stick"><i></i></div>
   <button id="abBtn" class="ab">SURGE</button>
@@ -53,6 +55,15 @@
   <div class="panel">
     <h2>MAIN STREET LOBBY</h2>
     <p class="sub" id="lobbyTip"></p>
+    <div class="how">
+      <b>🎯 HOW TO WIN</b>
+      <ol>
+        <li><b>You owe $6,750</b> on a $5,000 cash advance. Grab 🪙 coins (your sales) — <b>25% is auto-swept</b> to the lender.</li>
+        <li><b>Be first to reach $0 owed</b> and the round ends. Otherwise the <b>highest net worth</b> (cash − debt) wins at 0:00.</li>
+        <li>🔴 <b>STACK pods</b> = quick cash but a bigger debt. Tempting. Costly.</li>
+        <li>Shoot rivals to stun them and make them drop cash.</li>
+      </ol>
+    </div>
     <div class="skins" id="skins"></div>
     <div id="roster"></div>
     <div class="share">
@@ -75,6 +86,7 @@
   </div>
 </div>
 
+<div id="banner" class="hidden"></div>
 <div id="msg" class="overlay hidden"><div class="panel"><h2 id="msgT"></h2><p class="sub" id="msgP"></p><button class="btn" onclick="location.reload()">RELOAD</button></div></div>
 <script src="/vendor/colyseus.js"></script>
 <script type="module" src="main.js"></script>
