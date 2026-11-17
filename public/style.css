@@ -140,3 +140,18 @@ body.touch #lobbyTip,body.touch .botnote{display:none}
 #lbList .pl{padding:6px 10px;font-size:13px}#lbList .pl .no{width:26px;font-weight:800;color:#9aa1bb;font-variant-numeric:tabular-nums}
 #lbList .pl:nth-child(-n+3) .no{color:var(--gold)}#lbList .pl.me,#lbMe .pl{background:rgba(255,200,61,.16);border:1px solid rgba(255,200,61,.5)}
 #lbList .pl b{margin-left:auto;font-variant-numeric:tabular-nums}#lbList .pl small{color:#8d93b0;margin-left:8px}
+
+/* ---- mobile floating sticks, missions, tabs ---- */
+html,body{overscroll-behavior:none}
+.zone{position:absolute;top:34%;bottom:0;width:50%;display:none;pointer-events:auto;touch-action:none}
+#zoneL{left:0}#zoneR{right:0}body.touch .zone{display:block}
+.stick{pointer-events:none!important;opacity:.35;transition:opacity .12s}.stick.on{opacity:1}
+.tabs{display:flex;gap:6px}.tabs button{flex:1;padding:8px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#cfd6f5;font-weight:700;cursor:pointer}
+.tabs button.on{background:rgba(255,200,61,.2);border-color:rgba(255,200,61,.6);color:var(--gold)}
+.mis{font-size:12px;margin:6px 0;color:#d8d3b8}.mis b{float:right;color:#fff;font-variant-numeric:tabular-nums}.mis .bar{margin:3px 0 0;height:4px;clear:both}.mis.done{opacity:.6}
+.btn.ghost2{background:#2a3050;color:#cfd6f5;box-shadow:none}
+#shareBtn{background:linear-gradient(180deg,#43e08a,#1faa5c);color:#04230f;box-shadow:0 6px 0 #0f6b38,0 10px 24px rgba(31,170,92,.3)}
+
+.rbtns{display:flex;gap:8px;position:sticky;bottom:0;z-index:2;padding-top:4px}.rbtns .btn{padding:13px 14px;font-size:14px}.rbtns #shareBtn{flex:1}.rbtns #resBtn{flex:none}
+#results .panel{gap:8px;padding:16px}
+body.touch .lesson{font-size:12px;line-height:1.4;padding:10px}body.touch #resList .pl{padding:4px 10px}

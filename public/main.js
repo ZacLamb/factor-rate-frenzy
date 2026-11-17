@@ -408,21 +408,39 @@ let rightDown = false;
 addEventListener('contextmenu', (e) => { if (e.target.id === 'c') e.preventDefault(); });
 $('#c').addEventListener('mousedown', (e) => { if (e.button === 2) rightDown = true; else fireNotice(); });
 addEventListener('mouseup', (e) => { if (e.button === 2) rightDown = false; });
-function bindStick(name, el) {
-  const s = stick[name];
-  const set = (e) => { const r = el.getBoundingClientRect(); let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2), dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2); const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } s.x = dx; s.y = dy; el.firstElementChild.style.transform = `translate(${dx * 38}px,${dy * 38}px)`; };
-  el.addEventListener('pointerdown', (e) => { s.id = e.pointerId; el.setPointerCapture(e.pointerId); set(e); });
-  el.addEventListener('pointermove', (e) => { if (e.pointerId === s.id) set(e); });
-  const end = (e) => { if (e.pointerId === s.id) { if (name === 'R' && Math.hypot(s.x, s.y) > 0.3) fireNotice(); s.id = null; s.x = s.y = 0; el.firstElementChild.style.transform = ''; } };
-  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+function bindStick(name, zone, el) {
+  const s = stick[name]; let cx = 0, cy = 0, t0 = 0;
+  const set = (e) => { let dx = (e.clientX - cx) / 65, dy = (e.clientY - cy) / 65; const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } s.x = dx; s.y = dy; el.firstElementChild.style.transform = `translate(${dx * 38}px,${dy * 38}px)`; };
+  zone.addEventListener('pointerdown', (e) => {
+    if (s.id !== null) return; s.id = e.pointerId; zone.setPointerCapture(e.pointerId); cx = e.clientX; cy = e.clientY; t0 = performance.now();
+    el.style.left = (cx - 65) + 'px'; el.style.top = (cy - 65) + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.classList.add('on'); set(e);
+  });
+  zone.addEventListener('pointermove', (e) => { if (e.pointerId === s.id) set(e); });
+  const end = (e) => {
+    if (e.pointerId !== s.id) return;
+    if (name === 'R') { const dragged = Math.hypot(s.x, s.y) > 0.3; if (dragged) fireNotice(); else if (performance.now() - t0 < 260) fireNotice(true); }
+    s.id = null; s.x = s.y = 0; el.firstElementChild.style.transform = ''; el.style.left = el.style.top = el.style.right = el.style.bottom = ''; el.classList.remove('on');
+  };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
 }
-bindStick('L', $('#stickL')); bindStick('R', $('#stickR'));
+bindStick('L', $('#zoneL'), $('#stickL')); bindStick('R', $('#zoneR'), $('#stickR'));
 $('#abBtn').addEventListener('pointerdown', (e) => { e.preventDefault(); ability(); });
 const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3();
 let wantFire = false, lastFire = -9;
-function fireNotice() {
+const vib = (p) => { try { navigator.vibrate?.(p); } catch {} };
+function assistAim(force) {
+  let best = null, bd = 1e9;
+  for (const [id, c] of chars) {
+    if (id === myId) continue; const dx = c.x - me.x, dz = c.z - me.z, d = Math.hypot(dx, dz); if (d > 20 || d < 0.5) continue;
+    const ang = Math.atan2(dx, dz); let da = ang - me.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); if (!force && Math.abs(da) > 0.4) continue;
+    const sc = d + Math.abs(da) * 8; if (sc < bd) { bd = sc; best = ang; }
+  }
+  if (best !== null) me.ang = best;
+}
+function fireNotice(tap) {
   if (!room || phase !== 'play' || me.stun > 0 || performance.now() - lastFire < 600) return;
-  lastFire = performance.now(); room.send('fire', { a: +me.ang.toFixed(3) });
+  if (touch) assistAim(!!tap);
+  vib(8); lastFire = performance.now(); room.send('fire', { a: +me.ang.toFixed(3) });
   { const bm = makeBullet(), sx = me.x + Math.sin(me.ang) * 1.2, sz = me.z + Math.cos(me.ang) * 1.2; bm.position.set(sx, 1.5, sz); bm.rotation.y = me.ang; scene.add(bm);
     localBullets.push({ m: bm, x: sx, z: sz, vx: Math.sin(me.ang) * 22, vz: Math.cos(me.ang) * 22, ttl: 1.1 }); } beep(420, 0.08, 'square', 0.03, 260);
 }
@@ -444,6 +462,7 @@ async function connect() {
   room.onMessage('spawn', (m) => { me.x = m.x; me.z = m.z; });
   room.onMessage('snap', onSnap);
   room.onMessage('gain', (m) => {
+    vib(6);
     floatText(me.x, me.z, 3.2, '+' + money(m.g - m.s), m.b ? '#ff9bd2' : '#3ddc97');
     if (m.s > 0 && Math.random() < 0.5) floatText(me.x + 0.5, me.z, 2.2, '−' + money(m.s) + ' holdback', '#ff5d6c');
     beep(880 + Math.random() * 200, 0.07, 'triangle', 0.04);
@@ -451,6 +470,7 @@ async function connect() {
   room.onMessage('fx', onFx);
   room.onMessage('results', onResults);
   room.onMessage('xp', onXp);
+  room.onMessage('profile', (p) => { prof = p; renderMissions(); });
   setInterval(sendInput, 33);
   room.onMessage('pong', (p) => { rtt = performance.now() - p.t; });
   setInterval(() => room?.send('ping', { t: performance.now() }), 2000);
@@ -511,7 +531,11 @@ function showBanner(t, p) {
   const b = $('#banner'); b.classList.add('hidden'); void b.offsetWidth; b.innerHTML = `<h1>${t}</h1><p>${p}</p>`; b.style.animation = 'none'; void b.offsetWidth; b.style.animation = ''; b.classList.remove('hidden');
   setTimeout(() => b.classList.add('hidden'), 4900);
 }
+let wl = null;
+async function wakeOn() { try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch {} }
+document.addEventListener('visibilitychange', () => { if (!document.hidden && phase === 'play') wakeOn(); });
 function onPhase(prev) {
+  if (phase === 'play') wakeOn(); else { try { wl?.release(); } catch {} }
   if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner('PAY OFF YOUR ADVANCE FIRST', 'You owe $6,750. Grab coins — 25% of each is swept to the lender. First to $0 wins, otherwise highest net worth at 0:00. Grab power-ups, avoid the red STACK pods.'); beep(660, 0.3, 'square', 0.04, 990); }
   else if (phase === 'lobby') { $('#hud').classList.add('hidden'); if ($('#results').classList.contains('hidden')) $('#lobby').classList.remove('hidden'); renderLobby(); }
   else if (phase === 'results') { /* panel opened by 'results' message */ }
@@ -522,11 +546,11 @@ function onFx(f) {
     addRing(f.x, f.z); const c = f.id === myId ? null : chars.get(f.id); if (c) c.flash = 0.4;
     for (let i = localBullets.length - 1; i >= 0; i--) if (Math.hypot(localBullets[i].x - f.x, localBullets[i].z - f.z) < 5) { scene.remove(localBullets[i].m); localBullets.splice(i, 1); }
     if (f.id === myId) shake = 0.9;
-    if (f.id === myId) { toast(`${rn(f.by)} served you a collections notice! −${money(f.d)} cash dropped`, 'bad'); beep(160, 0.3, 'sawtooth', 0.07, 80); }
+    if (f.id === myId) { vib([60, 40, 60]); toast(`${rn(f.by)} served you a collections notice! −${money(f.d)} cash dropped`, 'bad'); beep(160, 0.3, 'sawtooth', 0.07, 80); }
     else if (f.by === myId) { toast(`Direct hit on ${rn(f.id)}!`, 'good'); beep(300, 0.12, 'square', 0.05); }
   } else if (f.k === 'stack') {
     addRing(f.x, f.z, 0xff2e63, 7);
-    toast(f.id === myId ? 'STACKED! +$3,000 cash and 2× sales… but payback +$4,350 and holdback +5%.' : `${rn(f.id)} stacked a second advance!`, 'bad'); if (f.id === myId) beep(200, 0.5, 'sawtooth', 0.06, 120);
+    toast(f.id === myId ? 'STACKED! +$3,000 cash and 2× sales… but payback +$4,350 and holdback +5%.' : `${rn(f.id)} stacked a second advance!`, 'bad'); if (f.id === myId) { vib(140); beep(200, 0.5, 'sawtooth', 0.06, 120); }
   } else if (f.k === 'surge') { addRing(chars.get(f.id)?.x ?? me.x, chars.get(f.id)?.z ?? me.z, 0xffc83d, 6); }
   else if (f.k === 'pow') {
     const names = { 2: 'Early-payoff discount: −$600 off your payback!', 3: 'Legal shield! Immune to notices for 8s.', 4: 'Holdback holiday! Sweep drops to 40% for 10s (a reconciliation).' };
@@ -555,6 +579,13 @@ function updateHud() {
   const now = performance.now(); if (now - lastBoard < 300) return; lastBoard = now;
   const rows = snap.p.map((a) => ({ id: a[0], owed: a[5], cash: a[6], net: a[6] - a[5] })).sort((a, b) => b.net - a.net);
   $('#board').innerHTML = '<h4 style="margin:0 0 4px;font-size:10px;letter-spacing:2px;color:#ffc83d">NET WORTH</h4>' + rows.map((r) => `<div class="brow ${r.id === myId ? 'me' : ''}"><span>${SKINS[roster.get(r.id)?.s || 0].e} ${roster.get(r.id)?.n || ''}</span><b>${money(r.net)}</b></div>`).join('');
+}
+let prof = null, lastRes = null;
+function renderMissions() {
+  if (!prof) return; const done = prof.missions.filter((x) => x.done).length;
+  $('#missSum').textContent = `${prof.streak ? '🔥 ' + prof.streak + '-day · ' : ''}${done}/3 done`;
+  $('#missList').innerHTML = prof.missions.map((x) => `<div class="mis ${x.done ? 'done' : ''}"><span>${x.done ? '✅' : '⬜'} ${x.t}</span><b>${Math.min(x.prog, x.target)}/${x.target} · +${x.xp} XP</b><div class="bar"><i style="width:${Math.min(100, x.prog / x.target * 100)}%"></i></div></div>`).join('') +
+    '<small>New missions every day. Keep your streak for a bigger daily XP bonus.</small>';
 }
 function rankHtml(xp, lv) {
   const R = RANKS[lv], N = RANKS[lv + 1], pct = N ? Math.round((xp - R.xp) / (N.xp - R.xp) * 100) : 100;
@@ -588,6 +619,17 @@ $('#copyBtn').onclick = async () => {
   try { if (navigator.share && touch) await navigator.share({ title: 'Factor Rate Frenzy', text: 'Join my match!', url }); else { await navigator.clipboard.writeText(url); } $('#copyBtn').textContent = 'COPIED ✓'; } catch { $('#shareLink').select(); }
   setTimeout(() => $('#copyBtn').textContent = 'COPY LINK', 1800);
 };
+$('#shareBtn').onclick = () => {
+  const msg = lastRes?.cleared ? `I paid off my debt in ${lastRes.cleared}s on Factor Rate Frenzy! Think you can beat me? 🎮` : `I finished #${lastRes?.rank || 1} on Factor Rate Frenzy! Can you beat me? 🎮`;
+  const url = location.origin + '/?m=' + code;
+  if (navigator.share) navigator.share({ title: 'Factor Rate Frenzy', text: msg, url }).catch(() => {});
+  else window.open('https://wa.me/?text=' + encodeURIComponent(msg + ' ' + url), '_blank');
+};
+let deferredInstall = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; $('#installBtn').classList.remove('hidden'); });
+$('#installBtn').onclick = async () => { deferredInstall?.prompt(); deferredInstall = null; $('#installBtn').classList.add('hidden'); };
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia('(display-mode: standalone)').matches || navigator.standalone)) $('#iosHint').classList.remove('hidden');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 $('#resBtn').onclick = () => { $('#results').classList.add('hidden'); if (phase === 'lobby') $('#lobby').classList.remove('hidden'); };
 
 function onResults(m) {
@@ -603,6 +645,7 @@ function onResults(m) {
       `<b>Effective APR ≈ ${a.toLocaleString()}%.</b> A factor rate isn't an interest rate — the faster you repay a fixed fee, the higher the APR.` +
       (my.stacks ? `<br><b>You stacked ${my.stacks}×:</b> extra cash cost you ${money(my.stacks * Math.round(cfg.STACK_ADV * cfg.STACK_FACTOR - cfg.STACK_ADV))} more in fees and a bigger holdback.` : `<br><b>No stacking</b> — you kept the cost fixed at ${money(cost)}.`);
   }
+  lastRes = { cleared: my?.cleared, rank, dur: m.dur }; vib([30, 60, 30]);
   $('#resXp').classList.add('hidden'); $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
   beep(520, 0.25, 'triangle', 0.05, 780);
 }
@@ -613,16 +656,19 @@ function onXp(x) {
   $('#resXp').classList.remove('hidden');
   if (x.up) beep(600, 0.5, 'triangle', 0.06, 1200);
 }
+let lbPeriod = 'all';
 async function openLeaderboard() {
   $('#lbPanel').classList.remove('hidden'); $('#lbList').innerHTML = '<small>Loading…</small>'; $('#lbMe').innerHTML = '';
   try {
-    const d = await (await fetch('/api/leaderboard?pid=' + encodeURIComponent(pid))).json();
+    const d = await (await fetch('/api/leaderboard?period=' + lbPeriod + '&pid=' + encodeURIComponent(pid))).json();
     const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     $('#lbList').innerHTML = d.top.length ? d.top.map((r) => `<div class="pl ${r.me ? 'me' : ''}"><span class="no">${r.r}</span><span>${RANKS[levelFor(r.xp)].i}</span>${esc(r.n)}<b>${r.xp.toLocaleString()} XP</b><small>${r.m} matches · ${r.w} wins</small></div>`).join('') : '<small>No ranked players yet. Finish a match to get on the board!</small>';
     if (d.me && d.me.r > 20) $('#lbMe').innerHTML = `<div class="pl"><span class="no">${d.me.r}</span>You<b>${d.me.xp.toLocaleString()} XP</b></div>`;
     else if (!d.me) $('#lbMe').innerHTML = '<small>Finish a match to join the ranking.</small>';
   } catch { $('#lbList').innerHTML = '<small>Could not load the leaderboard. Try again.</small>'; }
 }
+const setTab = (p) => { lbPeriod = p; $('#tabAll').classList.toggle('on', p === 'all'); $('#tabWeek').classList.toggle('on', p === 'week'); openLeaderboard(); };
+$('#tabAll').onclick = () => setTab('all'); $('#tabWeek').onclick = () => setTab('week');
 $('#lbBtn').onclick = openLeaderboard; $('#lbIntro').onclick = openLeaderboard; $('#lbClose').onclick = () => $('#lbPanel').classList.add('hidden');
 function showMsg(t, p) { $('#msgT').textContent = t; $('#msgP').textContent = p; $('#msg').classList.remove('hidden'); }
 

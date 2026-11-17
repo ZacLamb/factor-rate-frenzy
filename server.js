@@ -15,7 +15,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const LEADS = path.join(DATA_DIR, 'leads.jsonl');
 
 /* ---------------- static + lead API ---------------- */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
 const VENDOR = {
   '/vendor/three.module.js': 'node_modules/three/build/three.module.js',
   '/vendor/colyseus.js': 'node_modules/colyseus.js/dist/colyseus.js',
@@ -34,29 +34,61 @@ async function saveLead(row) {
 }
 const PROG = path.join(DATA_DIR, 'progress.json');
 if (pool) pool.query(`CREATE TABLE IF NOT EXISTS progress (pid TEXT PRIMARY KEY, name TEXT, xp INT NOT NULL DEFAULT 0, matches INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())`)
-  .then(() => pool.query('ALTER TABLE progress ADD COLUMN IF NOT EXISTS wins INT NOT NULL DEFAULT 0')).catch((e) => console.error('progress init', e.message));
+  .then(() => pool.query(`ALTER TABLE progress ADD COLUMN IF NOT EXISTS wins INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS streak INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_day TEXT, ADD COLUMN IF NOT EXISTS wk TEXT, ADD COLUMN IF NOT EXISTS wxp INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS daily TEXT`))
+  .catch((e) => console.error('progress init', e.message));
 const readProg = () => { try { return JSON.parse(fs.readFileSync(PROG, 'utf8')); } catch { return {}; } };
-async function loadXp(pid) {
-  if (!pid) return 0;
-  try {
-    if (pool) { const r = await pool.query('SELECT xp FROM progress WHERE pid=$1', [pid]); return r.rows[0]?.xp || 0; }
-    return readProg()[pid]?.xp || 0;
-  } catch { return 0; }
+
+const dayKey = (off = 0) => new Date(Date.now() - off * 864e5).toISOString().slice(0, 10);
+const weekKey = () => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+const MISSIONS = [
+  { id: 'hits', t: 'Hit 6 rivals with notices', target: 6, xp: 40 }, { id: 'coins', t: 'Collect 25 coins', target: 25, xp: 40 },
+  { id: 'wins', t: 'Finish a match in 1st place', target: 1, xp: 50 }, { id: 'matches', t: 'Play 3 matches', target: 3, xp: 30 },
+  { id: 'nostack', t: 'Finish a match without stacking', target: 1, xp: 30 }, { id: 'power', t: 'Grab 3 power-ups', target: 3, xp: 35 },
+  { id: 'free', t: 'Go debt-free once', target: 1, xp: 60 },
+];
+function missionsFor(day) {
+  let h = 7; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const pool = [...MISSIONS], out = [];
+  while (out.length < 3) { h = (Math.imul(h, 1103515245) + 12345) >>> 0; out.push(pool.splice((h >>> 8) % pool.length, 1)[0]); }
+  return out;
 }
-async function addXp(pid, name, gain, win = 0) {
+const blankProfile = () => ({ xp: 0, matches: 0, wins: 0, streak: 0, last_day: '', wk: '', wxp: 0, daily: { day: '', prog: {}, done: [] } });
+async function loadProfile(pid) {
+  const pf = blankProfile(); if (!pid) return pf;
+  try {
+    let r;
+    if (pool) r = (await pool.query('SELECT xp, matches, wins, streak, last_day, wk, wxp, daily FROM progress WHERE pid=$1', [pid])).rows[0];
+    else r = readProg()[pid];
+    if (r) { Object.assign(pf, { xp: r.xp || 0, matches: r.matches || 0, wins: r.wins || 0, streak: r.streak || 0, last_day: r.last_day || '', wk: r.wk || '', wxp: r.wxp || 0 }); try { const d = typeof r.daily === 'string' ? JSON.parse(r.daily) : r.daily; if (d?.day) pf.daily = d; } catch {} }
+  } catch (e) { console.error('loadProfile', e.message); }
+  return pf;
+}
+async function saveProfile(pid, name, pf) {
   if (!pid) return;
   try {
-    if (pool) await pool.query('INSERT INTO progress (pid,name,xp,matches,wins) VALUES ($1,$2,$3,1,$4) ON CONFLICT (pid) DO UPDATE SET xp = progress.xp + $3, matches = progress.matches + 1, wins = progress.wins + $4, name = $2, updated_at = now()', [pid, name, gain, win]);
-    else { const d = readProg(); d[pid] = { name, xp: (d[pid]?.xp || 0) + gain, matches: (d[pid]?.matches || 0) + 1, wins: (d[pid]?.wins || 0) + win }; fs.writeFileSync(PROG, JSON.stringify(d)); }
-  } catch (e) { console.error('addXp', e.message); }
+    if (pool) await pool.query('INSERT INTO progress (pid,name,xp,matches,wins,streak,last_day,wk,wxp,daily) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (pid) DO UPDATE SET name=$2, xp=$3, matches=$4, wins=$5, streak=$6, last_day=$7, wk=$8, wxp=$9, daily=$10, updated_at=now()',
+      [pid, name, pf.xp, pf.matches, pf.wins, pf.streak, pf.last_day, pf.wk, pf.wxp, JSON.stringify(pf.daily)]);
+    else { const d = readProg(); d[pid] = { name, ...pf }; fs.writeFileSync(PROG, JSON.stringify(d)); }
+  } catch (e) { console.error('saveProfile', e.message); }
 }
-let lbCache = { t: 0, rows: [] };
-async function topPlayers() {
-  if (Date.now() - lbCache.t < 8000) return lbCache.rows;
+function profileSummary(pf) {
+  const today = dayKey(), alive = pf.last_day === today || pf.last_day === dayKey(1);
+  const d = pf.daily?.day === today ? pf.daily : { prog: {}, done: [] };
+  return { xp: pf.xp, streak: alive ? pf.streak : 0, missions: missionsFor(today).map((m) => ({ id: m.id, t: m.t, target: m.target, xp: m.xp, prog: d.prog[m.id] || 0, done: d.done.includes(m.id) })) };
+}
+const lbCache = {};
+async function topPlayers(period) {
+  const k = period === 'week' ? 'week' : 'all', wk = weekKey();
+  if (lbCache[k] && Date.now() - lbCache[k].t < 8000) return lbCache[k].rows;
   let rows;
-  if (pool) rows = (await pool.query('SELECT pid, name, xp, matches, wins FROM progress ORDER BY xp DESC, matches ASC LIMIT 200')).rows;
-  else rows = Object.entries(readProg()).map(([pid, r]) => ({ pid, name: r.name, xp: r.xp || 0, matches: r.matches || 0, wins: r.wins || 0 })).sort((a, b) => b.xp - a.xp || a.matches - b.matches).slice(0, 200);
-  lbCache = { t: Date.now(), rows };
+  if (pool) rows = k === 'week'
+    ? (await pool.query('SELECT pid, name, wxp AS xp, matches, wins FROM progress WHERE wk=$1 ORDER BY wxp DESC LIMIT 200', [wk])).rows
+    : (await pool.query('SELECT pid, name, xp, matches, wins FROM progress ORDER BY xp DESC, matches ASC LIMIT 200')).rows;
+  else {
+    rows = Object.entries(readProg()).filter(([, r]) => k === 'all' || r.wk === wk).map(([pid, r]) => ({ pid, name: r.name, xp: k === 'week' ? r.wxp || 0 : r.xp || 0, matches: r.matches || 0, wins: r.wins || 0 }))
+      .sort((a, b) => b.xp - a.xp || a.matches - b.matches).slice(0, 200);
+  }
+  lbCache[k] = { t: Date.now(), rows };
   return rows;
 }
 async function loadLeads() {
@@ -92,7 +124,7 @@ function handler(req, res) {
   }
 
   if (url.pathname === '/api/leaderboard') {
-    topPlayers().then((rows) => {
+    topPlayers(url.searchParams.get('period')).then((rows) => {
       const pid = String(url.searchParams.get('pid') || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
       const idx = pid ? rows.findIndex((r) => r.pid === pid) : -1;
       const out = { top: rows.slice(0, 20).map((r, i) => ({ r: i + 1, n: r.name, xp: r.xp, m: r.matches, w: r.wins, me: r.pid === pid ? 1 : 0 })), me: idx >= 0 ? { r: idx + 1, xp: rows[idx].xp, m: rows[idx].matches, w: rows[idx].wins } : null, total: rows.length };
@@ -181,24 +213,24 @@ class MatchRoom extends Room {
 
   mkPlayer(id, name, skin, bot) {
     return { id, name, skin, bot, x: 0, z: 0, ang: 0, fire: false, stun: 0, immune: 0, fireCd: 0, surge: 0, surgeCd: 0, boost: 0, shieldT: 0, hbCut: 0, acc: 0,
-      pid: '', xp: 0, lv: 0, perk: perks(0), hits: 0, owed: 0, cash: 0, hb: 0, swept: 0, stacks: 0, advance: 0, payback: 0, cleared: 0, rethink: 0, tgt: null, greedy: false };
+      pid: '', xp: 0, lv: 0, perk: perks(0), pf: null, coinsN: 0, powN: 0, hits: 0, owed: 0, cash: 0, hb: 0, swept: 0, stacks: 0, advance: 0, payback: 0, cleared: 0, rethink: 0, tgt: null, greedy: false };
   }
   resetStats(p) {
-    p.owed = Math.round(R.ADVANCE * R.FACTOR); p.perk = perks(p.lv); p.hits = 0; p.cash = R.ADVANCE + p.perk.startCash; p.hb = R.HOLDBACK; p.swept = 0; p.stacks = 0;
+    p.owed = Math.round(R.ADVANCE * R.FACTOR); p.perk = perks(p.lv); p.hits = 0; p.coinsN = 0; p.powN = 0; p.cash = R.ADVANCE + p.perk.startCash; p.hb = R.HOLDBACK; p.swept = 0; p.stacks = 0;
     p.advance = R.ADVANCE; p.payback = p.owed; p.cleared = 0; p.stun = 0; p.immune = 0; p.surge = 0; p.surgeCd = 0; p.boost = 0; p.fireCd = 0; p.shieldT = 0; p.hbCut = 0;
   }
 
   async onJoin(client, options) {
     const p = this.mkPlayer(client.sessionId, clean(options?.name, 14) || 'Merchant', Math.max(0, Math.min(5, (options?.skin | 0))), false);
     p.pid = String(options?.pid || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
-    p.xp = await loadXp(p.pid); p.lv = levelFor(p.xp);
+    p.pf = await loadProfile(p.pid); p.xp = p.pf.xp; p.lv = levelFor(p.xp);
     this.resetStats(p);
     const a = Math.random() * 6.28; p.x = Math.cos(a) * 14; p.z = Math.sin(a) * 14;
     if (this.phase === 'play') { /* join in progress, fresh books */ }
     this.players.set(p.id, p);
     if (this.phase === 'play' && this.players.size > this.cfg.seats) { const b = [...this.players.values()].find((q) => q.bot); if (b) this.players.delete(b.id); }
     if (!this.hostId) this.hostId = p.id;
-    client.send('spawn', { x: p.x, z: p.z });
+    client.send('spawn', { x: p.x, z: p.z }); client.send('profile', profileSummary(p.pf));
     this.sendRoster();
   }
   onLeave(client) {
@@ -262,7 +294,7 @@ class MatchRoom extends Room {
     const gross = Math.round(v * (p.boost > 0 ? 2 : 1) * p.perk.sales);
     let sweep = 0;
     if (p.owed > 0) sweep = Math.min(p.owed, Math.round(gross * (p.hbCut > 0 ? p.hb * 0.4 : p.hb)));
-    p.owed -= sweep; p.swept += sweep; p.cash += gross - sweep;
+    p.owed -= sweep; p.swept += sweep; p.cash += gross - sweep; if (!quiet) p.coinsN++;
     const c = this.clients.find((c) => c.sessionId === p.id);
     if (c && !quiet) c.send('gain', { g: gross, s: sweep, b: p.boost > 0 ? 1 : 0 });
     this.clearCheck(p);
@@ -277,6 +309,7 @@ class MatchRoom extends Room {
   }
 
   takePower(p, k) {
+    p.powN++;
     if (k === 2) { const d = Math.min(p.owed, 600); p.owed -= d; p.swept += d; this.clearCheck(p); }
     else if (k === 3) p.shieldT = 8;
     else if (k === 4) p.hbCut = 10;
@@ -412,21 +445,35 @@ class MatchRoom extends Room {
   }
 
   async awardXp(res) {
-    const topId = res[0]?.id;
+    const topId = res[0]?.id, today = dayKey();
     for (const p of [...this.players.values()]) {
       if (p.bot) continue;
       const r = res.find((x) => x.id === p.id); if (!r) continue;
+      const pf = p.pf || await loadProfile(p.pid);
       const parts = [['Played a match', 25]];
       if (p.cleared) parts.push(['Debt-free!', 60]);
       if (p.id === topId) parts.push(['Top of the leaderboard', 40]);
       if (r.net > 0) parts.push(['Positive net worth', Math.min(50, Math.floor(r.net / 150))]);
       if (p.hits) parts.push([`${p.hits} notice hit${p.hits > 1 ? 's' : ''}`, Math.min(30, p.hits * 3)]);
       if (!p.stacks) parts.push(['No stacking — kept costs fixed', 15]);
+      if (pf.last_day !== today) {
+        pf.streak = pf.last_day === dayKey(1) ? pf.streak + 1 : 1; pf.last_day = today;
+        parts.push([`Daily bonus (🔥 ${pf.streak}-day streak)`, 10 + 5 * Math.min(pf.streak, 6)]);
+      }
+      if (pf.daily?.day !== today) pf.daily = { day: today, prog: {}, done: [] };
+      const stat = { hits: p.hits, coins: p.coinsN, wins: p.id === topId ? 1 : 0, matches: 1, nostack: p.stacks ? 0 : 1, power: p.powN, free: p.cleared ? 1 : 0 };
+      for (const mi of missionsFor(today)) {
+        if (pf.daily.done.includes(mi.id)) continue;
+        pf.daily.prog[mi.id] = Math.min(mi.target, (pf.daily.prog[mi.id] || 0) + (stat[mi.id] || 0));
+        if (pf.daily.prog[mi.id] >= mi.target) { pf.daily.done.push(mi.id); parts.push(['Mission: ' + mi.t, mi.xp]); }
+      }
       const gain = parts.reduce((s, x) => s + x[1], 0), oldLv = p.lv;
-      await addXp(p.pid, p.name, gain, p.id === topId ? 1 : 0);
-      p.xp += gain; p.lv = levelFor(p.xp);
+      pf.xp += gain; pf.matches++; if (p.id === topId) pf.wins++;
+      const wk = weekKey(); if (pf.wk !== wk) { pf.wk = wk; pf.wxp = 0; } pf.wxp += gain;
+      await saveProfile(p.pid, p.name, pf);
+      p.pf = pf; p.xp = pf.xp; p.lv = levelFor(p.xp);
       const c = this.clients.find((c) => c.sessionId === p.id);
-      if (c) c.send('xp', { parts, gain, xp: p.xp, lv: p.lv, up: p.lv > oldLv });
+      if (c) { c.send('xp', { parts, gain, xp: p.xp, lv: p.lv, up: p.lv > oldLv }); c.send('profile', profileSummary(pf)); }
     }
     this.sendRoster();
   }

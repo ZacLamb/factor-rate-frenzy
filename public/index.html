@@ -8,6 +8,14 @@
 <meta property="og:title" content="Factor Rate Frenzy — powered by Fundara">
 <meta property="og:site_name" content="Fundara">
 <meta property="og:description" content="Dodge the holdback. Don't stack. A 3D multiplayer game that teaches merchant cash advances.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#12142a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Frenzy">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/examples/jsm/"}}</script>
 </head>
@@ -37,6 +45,7 @@
   <div id="toast"></div>
   <div id="brand">FUNDARA</div>
   <div id="hint">Hold RIGHT-CLICK or WASD to move · aim with mouse · LEFT-CLICK (or F) fires a notice · SPACE surge</div>
+  <div id="zoneL" class="zone"></div><div id="zoneR" class="zone"></div>
   <div id="stickL" class="stick"><i></i></div>
   <div id="stickR" class="stick"><i></i></div>
   <button id="abBtn" class="ab">SURGE</button>
@@ -90,6 +99,7 @@
       </ol>
     </details>
     <div class="how" id="rankCard"></div>
+    <details class="how" id="missionsD"><summary><b>🔥 DAILY MISSIONS</b> <span class="tap" id="missSum"></span></summary><div id="missList"></div></details>
     <div class="skins" id="skins"></div>
     <div id="roster"></div>
     <div class="cfgrow"><span>Players</span><div class="stepper"><button id="seatDn" type="button">−</button><b id="seatN">4</b><button id="seatUp" type="button">+</button></div><label class="tgl"><input type="checkbox" id="botTgl" checked> Fill with bots</label></div>
@@ -97,9 +107,10 @@
       <input id="shareLink" readonly>
       <button class="btn small" id="copyBtn">COPY LINK</button>
     </div>
-    <div class="actions"><button class="btn small ghost" id="qBtn">⚙</button><button class="btn small ghost" id="lbBtn" title="Global leaderboard">🏆</button>
+    <div class="actions"><button class="btn small ghost" id="qBtn">⚙</button><button class="btn small ghost" id="lbBtn" title="Global leaderboard">🏆</button><button class="btn small ghost hidden" id="installBtn" title="Install the app">📲</button>
     <button class="btn" id="startBtn">START MATCH ▶</button></div>
     <small id="waitMsg" class="hidden">Waiting for the host to start… (you can run around meanwhile)</small>
+    <small id="iosHint" class="hidden">📲 Tip: tap Share → “Add to Home Screen” to install the game.</small>
     <small class="botnote">Bots fill empty seats. Send the link — friends join your match.</small>
     <div class="powered">POWERED BY <a class="fundara" href="https://fundara.co" target="_blank" rel="noopener">FUNDARA</a></div>
   </div>
@@ -112,7 +123,7 @@
     <div id="resList"></div>
     <div id="resLesson" class="lesson"></div>
     <div id="resXp" class="lesson hidden" style="background:rgba(61,220,151,.1);border-color:rgba(61,220,151,.4)"></div>
-    <button class="btn" id="resBtn">BACK TO LOBBY</button>
+    <div class="rbtns"><button class="btn ghost2" id="resBtn">LOBBY</button><button class="btn" id="shareBtn">📲 CHALLENGE FRIENDS</button></div>
     <div class="powered">POWERED BY <a class="fundara" href="https://fundara.co" target="_blank" rel="noopener">FUNDARA</a></div>
   </div>
 </div>
@@ -120,6 +131,7 @@
 <div id="banner" class="hidden"></div>
 <div id="lbPanel" class="overlay hidden" style="z-index:20"><div class="panel">
   <h2>🏆 GLOBAL LEADERBOARD</h2>
+  <div class="tabs"><button id="tabAll" class="on">All-time</button><button id="tabWeek">This week</button></div>
   <div id="lbList"><small>Loading…</small></div>
   <div id="lbMe"></div>
   <button class="btn" id="lbClose">CLOSE</button>
