@@ -278,7 +278,7 @@ class MatchRoom extends Room {
     } else {
       for (const p of this.players.values()) { p.stun = 0; }
     }
-    if (this.ticks % 2 === 0) this.snapshot();
+    this.snapshot();
   }
 
   updatePlay(dt) {

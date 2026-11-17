@@ -389,16 +389,31 @@ async function connect() {
   room.onMessage('fx', onFx);
   room.onMessage('results', onResults);
   room.onMessage('xp', onXp);
-  setInterval(sendInput, 50);
+  setInterval(sendInput, 33);
 }
 function sendInput() { if (room) room.send('in', { x: +me.x.toFixed(2), z: +me.z.toFixed(2), a: +me.ang.toFixed(3), f: false }); }
+let lastSnapT = 0, gapEma = 33, interp = 100, mvx = 0, mvz = 0, lastHud = 0;
+const _tgt = new THREE.Vector3(), _smp = { x: 0, z: 0, ang: 0 };
+function sampleBuf(buf, rt, out) {
+  const n = buf.length; if (!n) return false;
+  const L = buf[n - 1];
+  if (rt >= L.t) { out.x = L.x; out.z = L.z; out.ang = L.ang; return true; }
+  for (let i = n - 2; i >= 0; i--) {
+    const a = buf[i]; if (a.t > rt) continue;
+    const b = buf[i + 1], f = (rt - a.t) / (b.t - a.t || 1); let da = b.ang - a.ang; da = Math.atan2(Math.sin(da), Math.cos(da));
+    out.x = a.x + (b.x - a.x) * f; out.z = a.z + (b.z - a.z) * f; out.ang = a.ang + da * f; return true;
+  }
+  const F = buf[0]; out.x = F.x; out.z = F.z; out.ang = F.ang; return true;
+}
 function onSnap(s) {
+  const nowT = performance.now();
+  if (lastSnapT) { gapEma += (nowT - lastSnapT - gapEma) * 0.1; interp = Math.max(75, Math.min(170, gapEma * 2.4)); } lastSnapT = nowT;
   const prev = phase; snap = s; phase = s.ph;
   const seen = new Set();
   for (const a of s.p) {
     const id = a[0]; seen.add(id);
     if (id === myId) { Object.assign(me, { stun: a[4], owed: a[5], cash: a[6], hb: a[7], boost: a[8], surge: a[9], surgeCd: a[10], swept: a[11], shield: a[13], cut: a[14] }); continue; }
-    const c = ensureChar(id); c.tx = a[1]; c.tz = a[2]; c.tang = a[3]; c.stun = a[4]; c.surge = a[9]; c.boost = a[8]; c.shield = a[13];
+    const c = ensureChar(id); (c.buf ||= []).push({ t: nowT, x: a[1], z: a[2], ang: a[3] }); if (c.buf.length > 8) c.buf.shift(); c.tx = a[1]; c.stun = a[4]; c.surge = a[9]; c.boost = a[8]; c.shield = a[13];
     if (c.x === 0 && c.z === 0) { c.x = a[1]; c.z = a[2]; }
   }
   for (const id of [...chars.keys()]) if (!seen.has(id) && id !== myId) { scene.remove(chars.get(id).g); chars.delete(id); }
@@ -413,7 +428,7 @@ function onSnap(s) {
   for (const b of s.b) {
     lb.add(b[0]); let m = bulletMeshes.get(b[0]);
     if (!m) { m = new THREE.Mesh(bulletGeo, bulletMat); m.position.y = 1.5; scene.add(m); bulletMeshes.set(b[0], m); m.position.set(b[1], 1.4, b[2]); m.userData.fresh = true; }
-    m.userData.tx = b[1]; m.userData.tz = b[2]; m.userData.spin = true;
+    m.userData.tx = b[1]; m.userData.tz = b[2]; m.userData.ang = b[3]; m.userData.st = nowT;
   }
   for (const [id, m] of bulletMeshes) if (!lb.has(id)) { scene.remove(m); bulletMeshes.delete(id); }
   if (prev !== phase) onPhase(prev);
@@ -450,6 +465,7 @@ function fmtTime(t) { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) +
 let lastBoard = 0, lastSec = 0;
 function updateHud() {
   if (!snap) return;
+  const nh = performance.now(); if (nh - lastHud < 90) return; lastHud = nh;
   $('#tval').textContent = fmtTime(snap.tl);
   $('#tbar').firstElementChild.style.width = (snap.tl / cfg.ROUND * 100) + '%'; $('#timer').classList.toggle('warn', snap.tl <= 30 && phase === 'play');
   const sec = Math.ceil(snap.tl); if (phase === 'play' && sec <= 10 && sec !== lastSec) beep(sec <= 3 ? 880 : 600, 0.08, 'square', 0.03); lastSec = sec;
@@ -595,9 +611,10 @@ function frame() {
       }
     }
     const l = Math.hypot(mx, mz); if (l > 1) { mx /= l; mz /= l; }
-    const sp = (me.stun > 0 ? 0 : cfg.SPEED * perks(myLv()).speed * (me.surge > 0 ? 1.5 : 1)) * dt;
-    let r = resolve(me.x + mx * sp, me.z, 0.9); me.x = r.x; me.z = r.z;
-    r = resolve(me.x, me.z + mz * sp, 0.9); me.x = r.x; me.z = r.z;
+    const spd = me.stun > 0 ? 0 : cfg.SPEED * perks(myLv()).speed * (me.surge > 0 ? 1.5 : 1), ea = 1 - Math.exp(-15 * dt);
+    mvx += (mx * spd - mvx) * ea; mvz += (mz * spd - mvz) * ea;
+    let r = resolve(me.x + mvx * dt, me.z, 0.9); me.x = r.x; me.z = r.z;
+    r = resolve(me.x, me.z + mvz * dt, 0.9); me.x = r.x; me.z = r.z;
     // aim
     const sr = stick.R; wantFire = false;
     if (sr.id !== null && Math.hypot(sr.x, sr.y) > 0.25) { me.ang = Math.atan2(sr.x, sr.y); }
@@ -612,14 +629,12 @@ function frame() {
   // my character
   if (myId && roster.has(myId)) {
     const c = ensureChar(myId); c.g.visible = true;
-    c.x = me.x; c.z = me.z; c.ang = me.ang; c.stun = me.stun; c.surge = me.surge; c.boost = me.boost;
+    c.x = me.x; c.z = me.z; { let da = me.ang - c.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); c.ang += da * (1 - Math.exp(-22 * dt)); } c.stun = me.stun; c.surge = me.surge; c.boost = me.boost;
   }
-  // others: smooth
+  // others: snapshot interpolation (rendered slightly in the past for smooth motion)
+  const rtNow = performance.now() - interp;
   for (const [id, c] of chars) {
-    if (id !== myId && c.tx !== undefined) {
-      const k = 1 - Math.exp(-14 * dt); c.x += (c.tx - c.x) * k; c.z += (c.tz - c.z) * k;
-      let da = c.tang - c.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); c.ang += da * k;
-    }
+    if (id !== myId && c.buf && sampleBuf(c.buf, rtNow, _smp)) { c.x = _smp.x; c.z = _smp.z; c.ang = _smp.ang; }
     c.g.position.set(c.x, (c.stun > 0 ? 0 : Math.abs(Math.sin(t * 9 + c.x)) * 0.0), c.z);
     c.g.rotation.y = c.ang;
     c.g.rotation.z = c.stun > 0 ? Math.sin(t * 30) * 0.2 : 0;
@@ -632,18 +647,28 @@ function frame() {
     if (c.boost > 0) { c.g.children[0].material.emissive?.set(0x550022); } else c.g.children[0].material.emissive?.set(0x000000);
   }
   for (const m of orbMeshes.values()) { const s = m.getObjectByName('spin'); s.rotation.y += dt * 3; s.position.y = (m.userData.k >= 1 ? 1.7 : 1.1) + Math.sin(t * 3 + m.position.x) * 0.2; if (m.userData.k >= 1) { s.rotation.x += dt * 1.2; const h = m.getObjectByName('halo'); h.scale.setScalar(1 + Math.sin(t * 4) * 0.12); } }
-  for (const m of bulletMeshes.values()) { m.rotation.y += dt * 14; if (m.userData.tx !== undefined) { const k = 1 - Math.exp(-35 * dt); m.position.x += (m.userData.tx - m.position.x) * k; m.position.z += (m.userData.tz - m.position.z) * k; } }
+  for (const m of bulletMeshes.values()) { m.rotation.y += dt * 14; if (m.userData.tx !== undefined) {
+    const u = m.userData, ahead = (performance.now() - u.st) / 1000, vx = Math.sin(u.ang) * 22, vz = Math.cos(u.ang) * 22;
+    m.position.x += vx * dt; m.position.z += vz * dt;
+    const k = 1 - Math.exp(-10 * dt); m.position.x += (u.tx + vx * ahead - m.position.x) * k; m.position.z += (u.tz + vz * ahead - m.position.z) * k; } }
   for (let i = fxList.length - 1; i >= 0; i--) { const f = fxList[i]; if (f.p) { f.t += dt * 1.8; f.vy -= 22 * dt; f.m.position.x += f.vx * dt; f.m.position.y = Math.max(0.1, f.m.position.y + f.vy * dt); f.m.position.z += f.vz * dt; f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); f.m.material.dispose(); fxList.splice(i, 1); } continue; } f.t += dt * 2.2; f.m.scale.setScalar(1 + f.t * f.max); f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); fxList.splice(i, 1); } }
   if (!hqRing) hqRing = scene.getObjectByName('hqRing'); if (hqRing) hqRing.rotation.y += dt * 2;
   if (QUAL !== 'low') { sun.position.set(me.x - 30, 50, me.z + 20); sun.target.position.set(me.x, 0, me.z); }
   // camera
   if (!room) { const a = t * 0.12; camPos.set(Math.cos(a) * 52, 26 + Math.sin(t * 0.3) * 3, Math.sin(a) * 52); camera.position.copy(camPos); camera.lookAt(0, 4, 0); if (composer && QUAL !== 'low') composer.render(); else renderer.render(scene, camera); requestAnimationFrame(frame); return; }
-  const back = camera.aspect < 1 ? 1.15 : 0, tgt = new THREE.Vector3(me.x * 0.9, 30 + back * 8, me.z * 0.9 + 19 + back * 6);
+  const back = camera.aspect < 1 ? 1.15 : 0, tgt = _tgt.set(me.x * 0.9, 30 + back * 8, me.z * 0.9 + 19 + back * 6);
   camPos.lerp(tgt, 1 - Math.exp(-6 * dt)); camera.position.copy(camPos); camera.lookAt(camPos.x * 0.98, 0, camPos.z - (19 + back * 6) * 0.98);
   if ((frameN++ % 3) === 0) drawMini();
   if (composer && QUAL !== 'low') composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 await setQuality(QUAL);
+{ // pre-compile every material (power-ups, notices, skins) so nothing hitches on first appearance
+  const tmp = [0, 1, 2, 3, 4].map((k) => { const o = makeOrb(k, 800); scene.add(o); return o; });
+  const bm = new THREE.Mesh(bulletGeo, bulletMat); scene.add(bm);
+  const cs = SKINS.map((_, i) => { const g = makeChar(i); g.position.y = -50; scene.add(g); return g; });
+  try { renderer.compile(scene, camera); } catch {}
+  tmp.forEach((o) => scene.remove(o)); scene.remove(bm); cs.forEach((g) => scene.remove(g));
+}
 requestAnimationFrame(frame);
 window.__frf = { me, get phase() { return phase; } };
