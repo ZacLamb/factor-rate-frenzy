@@ -48,3 +48,17 @@ export const RULES = {
   ROUND: 150, ADVANCE: 5000, FACTOR: 1.35, HOLDBACK: 0.25,
   STACK_ADV: 3000, STACK_FACTOR: 1.45, STACK_HB: 0.05, SPEED: 7.5,
 };
+
+/* ---- Career progression: "Top Rep" ranks ---- */
+export const RANKS = [
+  { n: 'Intern Rep', xp: 0, i: '🧑‍💼', perk: 'Learning the ropes' },
+  { n: 'Sales Rep', xp: 150, i: '📞', perk: '+5% move speed' },
+  { n: 'Closer', xp: 400, i: '🤝', perk: '+5% sales per coin' },
+  { n: 'Senior Rep', xp: 800, i: '💼', perk: 'Notices recharge 10% faster' },
+  { n: 'Account Exec', xp: 1400, i: '🏆', perk: '+$500 starting cash, Surge recharges 2s faster' },
+  { n: 'Top Rep', xp: 2200, i: '👑', perk: '+5% more sales, gold crown & name' },
+];
+export function levelFor(xp) { let l = 0; for (let i = 0; i < RANKS.length; i++) if (xp >= RANKS[i].xp) l = i; return l; }
+export function perks(l) {
+  return { speed: l >= 1 ? 1.05 : 1, sales: 1 + (l >= 2 ? 0.05 : 0) + (l >= 5 ? 0.05 : 0), fire: l >= 3 ? 0.9 : 1, surgeCd: l >= 4 ? 2 : 0, startCash: l >= 4 ? 500 : 0 };
+}

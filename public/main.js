@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ARENA, SHOPS, resolve, RULES } from './shared.js';
+import { ARENA, SHOPS, resolve, RULES, RANKS, levelFor, perks } from './shared.js';
 
 const $ = (s) => document.querySelector(s);
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
@@ -20,6 +20,9 @@ const TIPS = [
   'No fixed term: an MCA is repaid from future sales, not on a monthly schedule.',
 ];
 const cfg = RULES;
+let pid = localStorage.getItem('frf_pid');
+if (!pid) { pid = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)); localStorage.setItem('frf_pid', pid); }
+const myLv = () => roster.get(myId)?.lv || 0;
 
 /* ---------- state ---------- */
 let room = null, myId = null, roster = new Map(), hostId = null, phase = 'lobby', snap = null;
@@ -195,11 +198,13 @@ function makeChar(skin) {
 const chars = new Map(); // id -> {g, tx, tz, tang, ...}
 function ensureChar(id) {
   let c = chars.get(id); const r = roster.get(id);
-  if (c && r && c.skin === r.s && c.name === r.n) return c;
+  if (c && r && c.skin === r.s && c.name === r.n && c.lv === r.lv) return c;
   if (c) scene.remove(c.g);
-  const g = makeChar(r ? r.s : 0); const tag = textSprite(r ? r.n : '…', id === myId ? '#ffc83d' : '#fff', 4.2);
+  const lv = r?.lv || 0; const g = makeChar(r ? r.s : 0);
+  const tag = textSprite((lv ? RANKS[lv].i + ' ' : '') + (r ? r.n : '…'), lv >= 5 ? '#ffd84d' : id === myId ? '#ffc83d' : '#fff', 4.6);
   tag.position.y = 3.6; g.add(tag); scene.add(g);
-  c = { g, x: c?.x ?? 0, z: c?.z ?? 0, ang: c?.ang ?? 0, skin: r?.s, name: r?.n, flash: 0 };
+  if (lv >= 5) { const cr = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.34, 0.3, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0xffd84d, emissive: 0xaa7a00, emissiveIntensity: 0.8, side: THREE.DoubleSide, metalness: 0.8, roughness: 0.25 })); cr.position.y = 2.85; g.add(cr); }
+  c = { lv, g, x: c?.x ?? 0, z: c?.z ?? 0, ang: c?.ang ?? 0, skin: r?.s, name: r?.n, flash: 0 };
   c.aura = g.getObjectByName('aura'); c.ringM = g.getObjectByName('ring'); c.bubble = g.getObjectByName('bubble');
   chars.set(id, c); return c;
 }
@@ -298,7 +303,7 @@ async function connect() {
   if (!code) { code = Math.random().toString(36).slice(2, 7).toUpperCase(); history.replaceState(null, '', '?m=' + code); }
   try {
     const client = new Colyseus.Client(ws());
-    room = await client.joinOrCreate('match', { code, name: myName, skin: mySkin });
+    room = await client.joinOrCreate('match', { code, name: myName, skin: mySkin, pid });
   } catch (e) { return showMsg('Could not join', 'This match is full or the server is busy. Try a new link.'); }
   myId = room.sessionId;
   room.onLeave(() => showMsg('Disconnected', 'Lost connection to the match.'));
@@ -312,6 +317,7 @@ async function connect() {
   });
   room.onMessage('fx', onFx);
   room.onMessage('results', onResults);
+  room.onMessage('xp', onXp);
   setInterval(sendInput, 50);
 }
 function sendInput() { if (room) room.send('in', { x: +me.x.toFixed(2), z: +me.z.toFixed(2), a: +me.ang.toFixed(3), f: false }); }
@@ -388,8 +394,17 @@ function updateHud() {
   const rows = snap.p.map((a) => ({ id: a[0], owed: a[5], cash: a[6], net: a[6] - a[5] })).sort((a, b) => b.net - a.net);
   $('#board').innerHTML = '<h4 style="margin:0 0 4px;font-size:10px;letter-spacing:2px;color:#ffc83d">NET WORTH</h4>' + rows.map((r) => `<div class="brow ${r.id === myId ? 'me' : ''}"><span>${SKINS[roster.get(r.id)?.s || 0].e} ${roster.get(r.id)?.n || ''}</span><b>${money(r.net)}</b></div>`).join('');
 }
+function rankHtml(xp, lv) {
+  const R = RANKS[lv], N = RANKS[lv + 1], pct = N ? Math.round((xp - R.xp) / (N.xp - R.xp) * 100) : 100;
+  const unlocked = RANKS.slice(1, lv + 1).map((r) => `<li>${r.i} <b>${r.n}</b>: ${r.perk}</li>`).join('');
+  return `<b>${R.i} ${R.n.toUpperCase()}</b> <span style="float:right">${xp} XP</span>
+    <div class="bar" style="margin:6px 0"><i style="width:${pct}%;background:linear-gradient(90deg,#ffc83d,#fff1b5)"></i></div>
+    <div style="font-size:12px;color:#c9c3a6">${N ? `Next: ${N.i} <b>${N.n}</b> at ${N.xp} XP — ${N.perk}` : 'Maximum rank reached. You are the Top Rep.'}</div>
+    ${unlocked ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:12px">${unlocked}</ul>` : ''}`;
+}
 function renderLobby() {
-  $('#roster').innerHTML = [...roster.values()].map((p) => `<div class="pl"><span>${SKINS[p.s].e}</span>${p.n}${p.id === myId ? ' (you)' : ''}<em>${p.id === hostId ? 'HOST' : ''}</em></div>`).join('');
+  const mr = roster.get(myId); if (mr) { $('#rankCard').innerHTML = rankHtml(mr.xp || 0, mr.lv || 0); $('#b-rank').textContent = RANKS[mr.lv || 0].i + ' ' + RANKS[mr.lv || 0].n; }
+  $('#roster').innerHTML = [...roster.values()].map((p) => `<div class="pl"><span>${SKINS[p.s].e}</span>${p.lv ? RANKS[p.lv].i + ' ' : ''}${p.n}${p.id === myId ? ' (you)' : ''}<em>${p.id === hostId ? 'HOST' : ''}</em></div>`).join('');
   const host = hostId === myId; $('#startBtn').classList.toggle('hidden', !host); $('#waitMsg').classList.toggle('hidden', host);
   $('#shareLink').value = location.origin + '/?m=' + code;
 }
@@ -420,8 +435,15 @@ function onResults(m) {
       `<b>Effective APR ≈ ${a.toLocaleString()}%.</b> A factor rate isn't an interest rate — the faster you repay a fixed fee, the higher the APR.` +
       (my.stacks ? `<br><b>You stacked ${my.stacks}×:</b> extra cash cost you ${money(my.stacks * Math.round(cfg.STACK_ADV * cfg.STACK_FACTOR - cfg.STACK_ADV))} more in fees and a bigger holdback.` : `<br><b>No stacking</b> — you kept the cost fixed at ${money(cost)}.`);
   }
-  $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
+  $('#resXp').classList.add('hidden'); $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
   beep(520, 0.25, 'triangle', 0.05, 780);
+}
+function onXp(x) {
+  const lvl = RANKS[x.lv], next = RANKS[x.lv + 1];
+  $('#resXp').innerHTML = `<b>EXPERIENCE +${x.gain} XP</b><br>` + x.parts.map((p) => `${p[0]}: <b>+${p[1]}</b>`).join('<br>') +
+    `<br><br>${x.up ? `<b>🎉 RANK UP! You are now ${lvl.i} ${lvl.n}</b> — ${lvl.perk}<br>` : ''}Rank: ${lvl.i} ${lvl.n} · ${x.xp} XP${next ? ` · ${next.xp - x.xp} XP to ${next.n}` : ''}`;
+  $('#resXp').classList.remove('hidden');
+  if (x.up) beep(600, 0.5, 'triangle', 0.06, 1200);
 }
 function showMsg(t, p) { $('#msgT').textContent = t; $('#msgP').textContent = p; $('#msg').classList.remove('hidden'); }
 
@@ -490,7 +512,7 @@ function frame() {
       }
     }
     const l = Math.hypot(mx, mz); if (l > 1) { mx /= l; mz /= l; }
-    const sp = (me.stun > 0 ? 0 : cfg.SPEED * (me.surge > 0 ? 1.5 : 1)) * dt;
+    const sp = (me.stun > 0 ? 0 : cfg.SPEED * perks(myLv()).speed * (me.surge > 0 ? 1.5 : 1)) * dt;
     let r = resolve(me.x + mx * sp, me.z, 0.9); me.x = r.x; me.z = r.z;
     r = resolve(me.x, me.z + mz * sp, 0.9); me.x = r.x; me.z = r.z;
     // aim

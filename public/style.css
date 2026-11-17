@@ -72,3 +72,5 @@ body.touch #board{display:none}
 #mini{position:absolute;right:10px;top:calc(max(10px,env(safe-area-inset-top)) + 210px);width:150px;height:150px;border-radius:14px;border:1px solid var(--line);background:rgba(10,12,22,.7)}
 body.touch #mini{top:max(10px,env(safe-area-inset-top));width:112px;height:112px}
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center,transparent 55%,rgba(5,4,18,.55))}
+
+.rankchip{font-size:11px;color:#fff1b5;margin:-2px 0 6px;font-weight:700}

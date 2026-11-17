@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import pg from 'pg';
 import { Server, Room } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { ARENA, resolve, RULES } from './public/shared.js';
+import { ARENA, resolve, RULES, levelFor, perks } from './public/shared.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 2567;
@@ -30,6 +30,23 @@ async function saveLead(row) {
   console.log('LEAD', JSON.stringify(row));
   if (pool) { await pool.query('INSERT INTO leads (name,email,ref) VALUES ($1,$2,$3)', [row.name, row.email, row.ref]); return; }
   fs.appendFileSync(LEADS, JSON.stringify(row) + '\n');
+}
+const PROG = path.join(DATA_DIR, 'progress.json');
+if (pool) pool.query(`CREATE TABLE IF NOT EXISTS progress (pid TEXT PRIMARY KEY, name TEXT, xp INT NOT NULL DEFAULT 0, matches INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())`).catch((e) => console.error('progress init', e.message));
+const readProg = () => { try { return JSON.parse(fs.readFileSync(PROG, 'utf8')); } catch { return {}; } };
+async function loadXp(pid) {
+  if (!pid) return 0;
+  try {
+    if (pool) { const r = await pool.query('SELECT xp FROM progress WHERE pid=$1', [pid]); return r.rows[0]?.xp || 0; }
+    return readProg()[pid]?.xp || 0;
+  } catch { return 0; }
+}
+async function addXp(pid, name, gain) {
+  if (!pid) return;
+  try {
+    if (pool) await pool.query('INSERT INTO progress (pid,name,xp,matches) VALUES ($1,$2,$3,1) ON CONFLICT (pid) DO UPDATE SET xp = progress.xp + $3, matches = progress.matches + 1, name = $2, updated_at = now()', [pid, name, gain]);
+    else { const d = readProg(); d[pid] = { name, xp: (d[pid]?.xp || 0) + gain }; fs.writeFileSync(PROG, JSON.stringify(d)); }
+  } catch (e) { console.error('addXp', e.message); }
 }
 async function loadLeads() {
   if (pool) return (await pool.query('SELECT created_at, name, email, ref FROM leads ORDER BY id')).rows.map((r) => ({ ts: new Date(r.created_at).toISOString(), name: r.name, email: r.email, ref: r.ref }));
@@ -126,15 +143,17 @@ class MatchRoom extends Room {
 
   mkPlayer(id, name, skin, bot) {
     return { id, name, skin, bot, x: 0, z: 0, ang: 0, fire: false, stun: 0, immune: 0, fireCd: 0, surge: 0, surgeCd: 0, boost: 0, shieldT: 0, hbCut: 0, acc: 0,
-      owed: 0, cash: 0, hb: 0, swept: 0, stacks: 0, advance: 0, payback: 0, cleared: 0, rethink: 0, tgt: null, greedy: false };
+      pid: '', xp: 0, lv: 0, perk: perks(0), hits: 0, owed: 0, cash: 0, hb: 0, swept: 0, stacks: 0, advance: 0, payback: 0, cleared: 0, rethink: 0, tgt: null, greedy: false };
   }
   resetStats(p) {
-    p.owed = Math.round(R.ADVANCE * R.FACTOR); p.cash = R.ADVANCE; p.hb = R.HOLDBACK; p.swept = 0; p.stacks = 0;
+    p.owed = Math.round(R.ADVANCE * R.FACTOR); p.perk = perks(p.lv); p.hits = 0; p.cash = R.ADVANCE + p.perk.startCash; p.hb = R.HOLDBACK; p.swept = 0; p.stacks = 0;
     p.advance = R.ADVANCE; p.payback = p.owed; p.cleared = 0; p.stun = 0; p.immune = 0; p.surge = 0; p.surgeCd = 0; p.boost = 0; p.fireCd = 0; p.shieldT = 0; p.hbCut = 0;
   }
 
-  onJoin(client, options) {
+  async onJoin(client, options) {
     const p = this.mkPlayer(client.sessionId, clean(options?.name, 14) || 'Merchant', Math.max(0, Math.min(5, (options?.skin | 0))), false);
+    p.pid = String(options?.pid || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
+    p.xp = await loadXp(p.pid); p.lv = levelFor(p.xp);
     this.resetStats(p);
     const a = Math.random() * 6.28; p.x = Math.cos(a) * 14; p.z = Math.sin(a) * 14;
     if (this.phase === 'play') { /* join in progress, fresh books */ }
@@ -153,7 +172,7 @@ class MatchRoom extends Room {
   }
 
   sendRoster() {
-    this.broadcast('roster', { host: this.hostId, code: this.code, p: [...this.players.values()].map((p) => ({ id: p.id, n: p.name, s: p.skin, b: p.bot ? 1 : 0 })) });
+    this.broadcast('roster', { host: this.hostId, code: this.code, p: [...this.players.values()].map((p) => ({ id: p.id, n: p.name, s: p.skin, b: p.bot ? 1 : 0, lv: p.lv, xp: p.xp })) });
   }
 
   startRound() {
@@ -194,14 +213,14 @@ class MatchRoom extends Room {
 
   useSurge(p) {
     if (this.phase !== 'play' || p.surgeCd > 0 || p.stun > 0) return;
-    p.surge = 4; p.surgeCd = 12;
+    p.surge = 4; p.surgeCd = 12 - p.perk.surgeCd;
     this.broadcast('fx', { k: 'surge', id: p.id });
   }
 
-  speedOf(p) { return p.stun > 0 ? 0 : R.SPEED * (p.surge > 0 ? 1.5 : 1); }
+  speedOf(p) { return p.stun > 0 ? 0 : R.SPEED * p.perk.speed * (p.surge > 0 ? 1.5 : 1); }
 
   collect(p, v, quiet) {
-    const gross = Math.round(v * (p.boost > 0 ? 2 : 1));
+    const gross = Math.round(v * (p.boost > 0 ? 2 : 1) * p.perk.sales);
     let sweep = 0;
     if (p.owed > 0) sweep = Math.min(p.owed, Math.round(gross * (p.hbCut > 0 ? p.hb * 0.4 : p.hb)));
     p.owed -= sweep; p.swept += sweep; p.cash += gross - sweep;
@@ -296,11 +315,12 @@ class MatchRoom extends Room {
   }
 
   shoot(p) {
-    p.fireCd = p.bot ? 1.4 : 0.6;
+    p.fireCd = p.bot ? 1.4 : 0.6 * p.perk.fire;
     this.bullets.push({ id: this.nid++, owner: p.id, x: p.x + Math.sin(p.ang) * 1.2, z: p.z + Math.cos(p.ang) * 1.2, vx: Math.sin(p.ang) * 22, vz: Math.cos(p.ang) * 22, ttl: 1.1 });
   }
 
   hit(q, b) {
+    const sh = this.players.get(b.owner); if (sh) sh.hits++;
     q.stun = 1.2; q.immune = 2.4;
     const drop = Math.min(q.cash, 1800);
     q.cash -= drop;
@@ -349,6 +369,27 @@ class MatchRoom extends Room {
     }));
     res.sort((a, b) => (a.cleared && b.cleared ? a.cleared - b.cleared : a.cleared ? -1 : b.cleared ? 1 : b.net - a.net));
     this.broadcast('results', { res, dur: Math.round(this.elapsed), winner: winnerId });
+    this.awardXp(res);
+  }
+
+  async awardXp(res) {
+    const topId = res[0]?.id;
+    for (const p of [...this.players.values()]) {
+      if (p.bot) continue;
+      const r = res.find((x) => x.id === p.id); if (!r) continue;
+      const parts = [['Played a match', 50]];
+      if (p.cleared) parts.push(['Debt-free!', 150]);
+      if (p.id === topId) parts.push(['Top of the leaderboard', 100]);
+      if (r.net > 0) parts.push(['Positive net worth', Math.min(150, Math.floor(r.net / 50))]);
+      if (p.hits) parts.push([`${p.hits} notice hit${p.hits > 1 ? 's' : ''}`, Math.min(100, p.hits * 8)]);
+      if (!p.stacks) parts.push(['No stacking — kept costs fixed', 40]);
+      const gain = parts.reduce((s, x) => s + x[1], 0), oldLv = p.lv;
+      await addXp(p.pid, p.name, gain);
+      p.xp += gain; p.lv = levelFor(p.xp);
+      const c = this.clients.find((c) => c.sessionId === p.id);
+      if (c) c.send('xp', { parts, gain, xp: p.xp, lv: p.lv, up: p.lv > oldLv });
+    }
+    this.sendRoster();
   }
 
   snapshot() {
