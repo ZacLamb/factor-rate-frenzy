@@ -11,6 +11,12 @@ export const SHOPS = [
   { x: 10, z: -9, w: 3, d: 6, h: 1.6, color: 0x607d8b },
   { x: -10, z: 9, w: 3, d: 6, h: 1.6, color: 0x607d8b },
   { x: 0, z: -22, w: 8, d: 2, h: 1.6, color: 0x6d4c41 },
+  { x: 33, z: 33, w: 3.6, d: 3.6, h: 1.3, color: 0x8a7898, planter: true },
+  { x: -33, z: 33, w: 3.6, d: 3.6, h: 1.3, color: 0x8a7898, planter: true },
+  { x: 33, z: -33, w: 3.6, d: 3.6, h: 1.3, color: 0x8a7898, planter: true },
+  { x: -33, z: -33, w: 3.6, d: 3.6, h: 1.3, color: 0x8a7898, planter: true },
+  { x: 34, z: 0, w: 3.6, d: 3.6, h: 1.3, color: 0x8a7898, planter: true },
+  { x: -34, z: 0, w: 3.6, d: 3.6, h: 1.3, color: 0x8a7898, planter: true },
   { x: 0, z: 22, w: 8, d: 2, h: 1.6, color: 0x6d4c41 },
 ];
 
