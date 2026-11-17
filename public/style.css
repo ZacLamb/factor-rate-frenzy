@@ -126,3 +126,10 @@ a.fundara:hover{filter:brightness(1.25)}
 .btn.ghost{background:#2a3050;color:#cfd6f5;box-shadow:none;font-size:15px;padding:0 14px}
 #lobby .powered{margin-top:0}
 body.touch #lobbyTip,body.touch .botnote{display:none}
+
+.cfgrow{display:flex;align-items:center;gap:10px;font-size:13px;color:#cfd6f5;background:rgba(255,255,255,.05);border-radius:10px;padding:5px 10px}
+.stepper{display:flex;align-items:center;gap:8px}.stepper b{min-width:18px;text-align:center;font-variant-numeric:tabular-nums}
+.stepper button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+.stepper button:disabled{opacity:.3}
+.tgl{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;letter-spacing:0;text-transform:none;color:#cfd6f5;flex-direction:row}
+.tgl input{width:16px;height:16px;padding:0}

@@ -123,7 +123,7 @@ class MatchRoom extends Room {
     this.players = new Map();
     this.orbs = []; this.bullets = [];
     this.phase = 'lobby'; this.tl = R.ROUND; this.elapsed = 0; this.resultsT = 0;
-    this.nid = 1; this.ticks = 0; this.hostId = null; this.spawnT = 0; this.stackT = 6;
+    this.cfg = { seats: 4, bots: true }; this.maxClients = 4; this.nid = 1; this.ticks = 0; this.hostId = null; this.spawnT = 0; this.stackT = 6;
 
     this.onMessage('in', (c, m) => {
       const p = this.players.get(c.sessionId); if (!p || !m) return;
@@ -134,6 +134,14 @@ class MatchRoom extends Room {
       const p = this.players.get(c.sessionId); if (!p || this.phase !== 'play' || p.fireCd > 0 || p.stun > 0) return;
       if (m && Number.isFinite(m.a)) p.ang = m.a;
       this.shoot(p);
+    });
+    this.onMessage('cfg', (c, m) => {
+      if (c.sessionId !== this.hostId || this.phase !== 'lobby' || !m) return;
+      const humans = [...this.players.values()].filter((p) => !p.bot).length;
+      this.cfg.seats = Math.max(2, humans, Math.min(8, m.seats | 0 || this.cfg.seats)); this.cfg.bots = !!m.bots;
+      this.maxClients = this.cfg.seats;
+      if (this.clients.length < this.maxClients) this.unlock(); else this.lock();
+      this.sendRoster();
     });
     this.onMessage('ab', (c) => { const p = this.players.get(c.sessionId); if (p) this.useSurge(p); });
     this.onMessage('start', (c) => { if (c.sessionId === this.hostId && this.phase === 'lobby') this.startRound(); });
@@ -162,6 +170,7 @@ class MatchRoom extends Room {
     const a = Math.random() * 6.28; p.x = Math.cos(a) * 14; p.z = Math.sin(a) * 14;
     if (this.phase === 'play') { /* join in progress, fresh books */ }
     this.players.set(p.id, p);
+    if (this.phase === 'play' && this.players.size > this.cfg.seats) { const b = [...this.players.values()].find((q) => q.bot); if (b) this.players.delete(b.id); }
     if (!this.hostId) this.hostId = p.id;
     client.send('spawn', { x: p.x, z: p.z });
     this.sendRoster();
@@ -176,13 +185,13 @@ class MatchRoom extends Room {
   }
 
   sendRoster() {
-    this.broadcast('roster', { host: this.hostId, code: this.code, p: [...this.players.values()].map((p) => ({ id: p.id, n: p.name, s: p.skin, b: p.bot ? 1 : 0, lv: p.lv, xp: p.xp })) });
+    this.broadcast('roster', { host: this.hostId, code: this.code, cfg: this.cfg, p: [...this.players.values()].map((p) => ({ id: p.id, n: p.name, s: p.skin, b: p.bot ? 1 : 0, lv: p.lv, xp: p.xp })) });
   }
 
   startRound() {
     for (const [id, p] of this.players) if (p.bot) this.players.delete(id);
     const humans = [...this.players.values()];
-    const want = Math.max(0, 4 - humans.length);
+    const want = this.cfg.bots ? Math.max(0, this.cfg.seats - humans.length) : 0;
     for (let i = 0; i < want; i++) {
       const b = this.mkPlayer('bot' + this.nid++, BOT_NAMES[i % BOT_NAMES.length], (i * 2 + 1) % 6, true);
       b.greedy = Math.random() < 0.35; this.players.set(b.id, b);
@@ -196,7 +205,7 @@ class MatchRoom extends Room {
       const c = this.clients.find((c) => c.sessionId === p.id); if (c) c.send('spawn', { x: p.x, z: p.z });
     });
     this.orbs = []; this.bullets = []; this.tl = R.ROUND; this.elapsed = 0; this.stackT = 8; this.powT = 6;
-    for (let i = 0; i < 26; i++) this.spawnOrb(0);
+    for (let i = 0; i < 14 + 3 * all.length; i++) this.spawnOrb(0);
     this.phase = 'play';
     this.sendRoster();
     this.broadcast('fx', { k: 'start' });
@@ -275,7 +284,7 @@ class MatchRoom extends Room {
   updatePlay(dt) {
     this.elapsed += dt; this.tl -= dt;
     this.spawnT -= dt; this.stackT -= dt; this.powT -= dt;
-    if (this.spawnT <= 0) { this.spawnT = 0.55; if (this.orbs.filter((o) => o.k === 0).length < 34) this.spawnOrb(0); }
+    if (this.spawnT <= 0) { this.spawnT = 0.55; if (this.orbs.filter((o) => o.k === 0).length < 20 + 4 * this.players.size) this.spawnOrb(0); }
     if (this.stackT <= 0) { this.stackT = 11; if (this.orbs.filter((o) => o.k === 1).length < 2) this.spawnOrb(1, undefined, undefined, R.STACK_ADV); }
 
     if (this.powT <= 0) { this.powT = 8; if (this.orbs.filter((o) => o.k >= 2).length < 3) this.spawnOrb(2 + Math.floor(Math.random() * 3), undefined, undefined, 0); }

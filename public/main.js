@@ -25,6 +25,7 @@ if (!pid) { pid = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toStr
 const myLv = () => roster.get(myId)?.lv || 0;
 
 /* ---------- state ---------- */
+let cfgS = { seats: 4, bots: true };
 let room = null, myId = null, roster = new Map(), hostId = null, phase = 'lobby', snap = null;
 let myName = '', mySkin = +localStorage.getItem('frf_skin') || 0, code = '';
 const touch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
@@ -45,7 +46,7 @@ function beep(f, d = 0.08, type = 'sine', v = 0.05, f2) {
 }
 
 /* ---------- three.js scene ---------- */
-const QUAL = localStorage.getItem('frf_q') || (touch ? 'low' : 'high');
+let QUAL = localStorage.getItem('frf_q') || (touch ? 'low' : 'high');
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: false, powerPreference: 'high-performance' });
 let dpr = Math.min(devicePixelRatio, QUAL === 'low' ? 1 : 1.5), dprMax = dpr;
 renderer.setPixelRatio(dpr);
@@ -63,13 +64,15 @@ sun.shadow.mapSize.set(QUAL === 'ultra' ? 2048 : 1024, QUAL === 'ultra' ? 2048 :
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 });
 scene.add(sun, sun.target);
 
-/* ---- post-processing / reflections (High & Ultra only) ---- */
-let composer = null, bloom = null;
-const FX = QUAL !== 'low' ? await Promise.all([
-  import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
-  import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/objects/Reflector.js'),
-]).catch((e) => { console.warn('fx unavailable', e); return null; }) : null;
-if (FX) {
+/* ---- post-processing / reflections (High & Ultra), switchable at runtime ---- */
+let composer = null, bloom = null, FX = null, envPM = null, fxTried = false, refl = null, wetMap = null, dgCount = 0;
+async function ensureFx() {
+  if (FX || fxTried) return !!FX; fxTried = true;
+  FX = await Promise.all([
+    import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
+    import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/objects/Reflector.js'),
+  ]).catch((e) => { console.warn('fx unavailable', e); return null; });
+  if (!FX) return false;
   const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 2 });
   composer = new FX[0].EffectComposer(renderer, rt);
   composer.addPass(new FX[1].RenderPass(scene, camera));
@@ -81,7 +84,8 @@ if (FX) {
     for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(255,${190 + (i % 3) * 20},${120 + (i % 5) * 20},.9)`; g.beginPath(); g.arc((i * 97) % w, h * (0.35 + ((i * 53) % 40) / 100), 4 + (i % 4) * 3, 0, 6.3); g.fill(); }
   });
   envTex.mapping = THREE.EquirectangularReflectionMapping;
-  scene.environment = pm.fromEquirectangular(envTex).texture; scene.environmentIntensity = 0.65;
+  envPM = pm.fromEquirectangular(envTex).texture;
+  return true;
 }
 function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
 function textSprite(text, color = '#fff', size = 4, bg = true) {
@@ -119,18 +123,35 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(ARENA * 2 + 40, ARENA * 2 
 }));
 ground.material.map.wrapS = ground.material.map.wrapT = THREE.RepeatWrapping; ground.material.map.repeat.set(4, 4);
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-if (FX) {
-  const rm = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#e0e0e0'; g.fillRect(0, 0, w, h); for (let i = 0; i < 22; i++) { const x = Math.random() * w, y = Math.random() * h, r = 14 + Math.random() * 36; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, '#202020'); gr.addColorStop(1, 'rgba(224,224,224,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); } });
-  rm.colorSpace = THREE.NoColorSpace; rm.wrapS = rm.wrapT = THREE.RepeatWrapping; rm.repeat.set(4, 4);
-  ground.material.roughnessMap = rm; ground.material.roughness = 1; ground.material.metalness = 0.2;
+function wetMapGet() {
+  if (!wetMap) {
+    wetMap = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#e0e0e0'; g.fillRect(0, 0, w, h); for (let i = 0; i < 22; i++) { const x = Math.random() * w, y = Math.random() * h, r = 14 + Math.random() * 36; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, '#202020'); gr.addColorStop(1, 'rgba(224,224,224,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); } });
+    wetMap.colorSpace = THREE.NoColorSpace; wetMap.wrapS = wetMap.wrapT = THREE.RepeatWrapping; wetMap.repeat.set(4, 4);
+  }
+  return wetMap;
 }
-if (FX && QUAL === 'ultra') {
+function buildRefl() {
   const { Reflector } = FX[4], S = Reflector.ReflectorShader;
   const shader = { name: 'WetStreet', uniforms: THREE.UniformsUtils.clone(S.uniforms), vertexShader: S.vertexShader,
     fragmentShader: 'uniform vec3 color; uniform sampler2D tDiffuse; varying vec4 vUv; void main(){ vec4 b = texture2DProj(tDiffuse, vUv); gl_FragColor = vec4(b.rgb * color, 0.42); }' };
-  const refl = new Reflector(new THREE.PlaneGeometry(ARENA * 2 + 6, ARENA * 2 + 6), { textureWidth: Math.min(1024, innerWidth * 0.5 | 0), textureHeight: Math.min(1024, innerHeight * 0.5 | 0), clipBias: 0.003, shader, color: 0x8f9bd0 });
+  refl = new Reflector(new THREE.PlaneGeometry(ARENA * 2 + 6, ARENA * 2 + 6), { textureWidth: Math.min(1024, innerWidth * 0.5 | 0), textureHeight: Math.min(1024, innerHeight * 0.5 | 0), clipBias: 0.003, shader, color: 0x8f9bd0 });
   refl.material.transparent = true; refl.material.depthWrite = false; refl.rotation.x = -Math.PI / 2; refl.position.y = 0.04; scene.add(refl);
 }
+const QNAME = { low: 'Fast', high: 'High', ultra: 'Ultra' };
+function applyQuality(q) {
+  QUAL = q; try { localStorage.setItem('frf_q', q); } catch {}
+  const on = q !== 'low' && !!FX;
+  renderer.shadowMap.enabled = on; sun.castShadow = on;
+  const sz = q === 'ultra' ? 2048 : 1024; if (sun.shadow.mapSize.x !== sz) { sun.shadow.mapSize.set(sz, sz); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+  scene.environment = on ? envPM : null; scene.environmentIntensity = 0.65;
+  ground.material.roughnessMap = on ? wetMapGet() : null; ground.material.roughness = on ? 1 : 0.95; ground.material.metalness = on ? 0.2 : 0;
+  if (on && q === 'ultra') { if (!refl) buildRefl(); refl.visible = true; } else if (refl) refl.visible = false;
+  dprMax = Math.min(devicePixelRatio, q === 'low' ? 1 : 1.5); dpr = dprMax; renderer.setPixelRatio(dpr);
+  scene.traverse((o) => { const ms = o.material; if (ms) (Array.isArray(ms) ? ms : [ms]).forEach((x) => { x.needsUpdate = true; }); });
+  resize();
+  const qb = document.querySelector('#qBtn'); if (qb) { qb.textContent = '⚙ ' + QNAME[q]; qb.disabled = false; }
+}
+async function setQuality(q) { if (q !== 'low') await ensureFx(); applyQuality(q); }
 // arena plaza
 const plaza = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ color: 0x3a3f55, roughness: 0.9 }));
 plaza.rotation.x = -Math.PI / 2; plaza.position.y = 0.02; plaza.receiveShadow = true; scene.add(plaza);
@@ -354,10 +375,10 @@ async function connect() {
   try {
     const client = new Colyseus.Client(ws());
     room = await client.joinOrCreate('match', { code, name: myName, skin: mySkin, pid });
-  } catch (e) { return showMsg('Could not join', 'This match is full or the server is busy. Try a new link.'); }
+  } catch (e) { return showMsg('Could not join', 'This match is full (the host can raise the player limit in the lobby) or the server is busy. Try again or start a new link.'); }
   myId = room.sessionId;
   room.onLeave(() => showMsg('Disconnected', 'Lost connection to the match.'));
-  room.onMessage('roster', (m) => { hostId = m.host; roster = new Map(m.p.map((p) => [p.id, p])); renderLobby(); });
+  room.onMessage('roster', (m) => { hostId = m.host; cfgS = m.cfg || cfgS; roster = new Map(m.p.map((p) => [p.id, p])); renderLobby(); });
   room.onMessage('spawn', (m) => { me.x = m.x; me.z = m.z; });
   room.onMessage('snap', onSnap);
   room.onMessage('gain', (m) => {
@@ -455,6 +476,9 @@ function rankHtml(xp, lv) {
 function renderLobby() {
   const mr = roster.get(myId); if (mr) { $('#rankCard').innerHTML = rankHtml(mr.xp || 0, mr.lv || 0); $('#b-rank').textContent = RANKS[mr.lv || 0].i + ' ' + RANKS[mr.lv || 0].n; }
   $('#roster').innerHTML = [...roster.values()].map((p) => `<div class="pl"><span>${SKINS[p.s].e}</span>${p.lv ? RANKS[p.lv].i + ' ' : ''}${p.n}${p.id === myId ? ' (you)' : ''}<em>${p.id === hostId ? 'HOST' : ''}</em></div>`).join('');
+  $('#seatN').textContent = cfgS.seats; $('#botTgl').checked = cfgS.bots;
+  const isHost = hostId === myId; for (const id of ['#seatDn', '#seatUp', '#botTgl']) $(id).disabled = !isHost;
+  $('#seatDn').disabled = !isHost || cfgS.seats <= Math.max(2, [...roster.values()].filter((p) => !p.b).length); $('#seatUp').disabled = !isHost || cfgS.seats >= 8;
   const host = hostId === myId; $('#startBtn').classList.toggle('hidden', !host); $('#waitMsg').classList.toggle('hidden', host);
   $('#shareLink').value = location.origin + '/?m=' + code;
 }
@@ -462,8 +486,11 @@ function buildSkins() {
   $('#skins').innerHTML = SKINS.map((s, i) => `<div class="skin ${i === mySkin ? 'sel' : ''}" data-i="${i}" title="${s.n}">${s.e}</div>`).join('');
   $('#skins').querySelectorAll('.skin').forEach((el) => el.onclick = () => { mySkin = +el.dataset.i; localStorage.setItem('frf_skin', mySkin); buildSkins(); room?.send('prof', { name: myName, skin: mySkin }); });
 }
-$('#qBtn').textContent = '⚙ ' + ({ low: 'Fast', high: 'High', ultra: 'Ultra' })[QUAL]; $('#qBtn').title = 'Graphics quality (tap to change)';
-$('#qBtn').onclick = () => { localStorage.setItem('frf_q', { low: 'high', high: 'ultra', ultra: 'low' }[QUAL]); sessionStorage.removeItem('frf_dg'); sessionStorage.setItem('frf_skipintro', '1'); location.reload(); };
+$('#qBtn').title = 'Graphics quality (tap to change)';
+$('#qBtn').onclick = async () => { const qb = $('#qBtn'); qb.disabled = true; qb.textContent = '⚙ …'; await setQuality({ low: 'high', high: 'ultra', ultra: 'low' }[QUAL]); };
+$('#seatDn').onclick = () => room?.send('cfg', { seats: cfgS.seats - 1, bots: cfgS.bots });
+$('#seatUp').onclick = () => room?.send('cfg', { seats: cfgS.seats + 1, bots: cfgS.bots });
+$('#botTgl').onchange = () => room?.send('cfg', { seats: cfgS.seats, bots: $('#botTgl').checked });
 $('#startBtn').onclick = () => room?.send('start');
 $('#copyBtn').onclick = async () => {
   const url = $('#shareLink').value;
@@ -522,7 +549,7 @@ if (sessionStorage.getItem('frf_skipintro')) { sessionStorage.removeItem('frf_sk
 
 /* ---------- main loop ---------- */
 function resize() {
-  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); if (composer) { composer.setPixelRatio(dpr); composer.setSize(w, h); bloom.resolution.set(w / 2, h / 2); }
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); if (composer && bloom) { composer.setPixelRatio(dpr); composer.setSize(w, h); bloom.resolution.set(w / 2, h / 2); }
   camera.aspect = w / h; camera.fov = w / h < 1 ? 70 : 50; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
@@ -551,7 +578,7 @@ function frame() {
   const rawDt = clock.getDelta(); const dt = Math.min(rawDt, 0.05); t += dt;
   ema += (rawDt * 1000 - ema) * 0.05; adaptT += rawDt;
   if (adaptT > 2.5) { adaptT = 0;
-    if (ema > 34 && dpr <= 0.71 && QUAL !== 'low' && phase === 'lobby' && !sessionStorage.getItem('frf_dg')) { sessionStorage.setItem('frf_dg', '1'); if (room) sessionStorage.setItem('frf_skipintro', '1'); localStorage.setItem('frf_q', QUAL === 'ultra' ? 'high' : 'low'); location.reload(); }
+    if (ema > 34 && dpr <= 0.71 && QUAL !== 'low' && phase !== 'play' && dgCount < 2) { dgCount++; setQuality(QUAL === 'ultra' ? 'high' : 'low'); }
     if (ema > 26 && dpr > 0.7) { dpr = Math.max(0.7, dpr - 0.2); renderer.setPixelRatio(dpr); resize(); }
     else if (ema < 15 && dpr < dprMax) { dpr = Math.min(dprMax, dpr + 0.15); renderer.setPixelRatio(dpr); resize(); } }
   // local movement
@@ -610,12 +637,13 @@ function frame() {
   if (!hqRing) hqRing = scene.getObjectByName('hqRing'); if (hqRing) hqRing.rotation.y += dt * 2;
   if (QUAL !== 'low') { sun.position.set(me.x - 30, 50, me.z + 20); sun.target.position.set(me.x, 0, me.z); }
   // camera
-  if (!room) { const a = t * 0.12; camPos.set(Math.cos(a) * 52, 26 + Math.sin(t * 0.3) * 3, Math.sin(a) * 52); camera.position.copy(camPos); camera.lookAt(0, 4, 0); if (composer) composer.render(); else renderer.render(scene, camera); requestAnimationFrame(frame); return; }
+  if (!room) { const a = t * 0.12; camPos.set(Math.cos(a) * 52, 26 + Math.sin(t * 0.3) * 3, Math.sin(a) * 52); camera.position.copy(camPos); camera.lookAt(0, 4, 0); if (composer && QUAL !== 'low') composer.render(); else renderer.render(scene, camera); requestAnimationFrame(frame); return; }
   const back = camera.aspect < 1 ? 1.15 : 0, tgt = new THREE.Vector3(me.x * 0.9, 30 + back * 8, me.z * 0.9 + 19 + back * 6);
   camPos.lerp(tgt, 1 - Math.exp(-6 * dt)); camera.position.copy(camPos); camera.lookAt(camPos.x * 0.98, 0, camPos.z - (19 + back * 6) * 0.98);
   if ((frameN++ % 3) === 0) drawMini();
-  if (composer) composer.render(); else renderer.render(scene, camera);
+  if (composer && QUAL !== 'low') composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
+await setQuality(QUAL);
 requestAnimationFrame(frame);
 window.__frf = { me, get phase() { return phase; } };
