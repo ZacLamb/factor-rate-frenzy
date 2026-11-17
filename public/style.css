@@ -100,3 +100,8 @@ body.touch #timer{padding:3px 12px;top:max(8px,env(safe-area-inset-top))}
 body.touch #timer b{font-size:20px}body.touch #tbar{width:80px}
 body.touch #hint{display:none}
 body.touch #toast{top:66px}
+
+.powered{text-align:center;font-size:11px;letter-spacing:3px;color:#8d93b0;margin-top:2px}.powered b{color:#fff;letter-spacing:4px;font-weight:900}
+#intro .powered{margin-top:10px;font-size:13px}#intro .powered b{color:var(--gold)}
+#brand{position:absolute;left:50%;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 46px);transform:translateX(-50%);font-size:10px;letter-spacing:5px;font-weight:900;color:rgba(255,255,255,.35)}
+body.touch #brand{bottom:max(8px,env(safe-area-inset-bottom))}

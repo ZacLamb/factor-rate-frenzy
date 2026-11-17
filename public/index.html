@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Factor Rate Frenzy — the Merchant Cash Advance game</title>
+<title>Factor Rate Frenzy — powered by Fundara</title>
 <meta name="description" content="A 3D multiplayer brawl where you learn how merchant cash advances really work: factor rates, holdbacks and stacking. Play free with friends.">
-<meta property="og:title" content="Factor Rate Frenzy">
+<meta property="og:title" content="Factor Rate Frenzy — powered by Fundara">
+<meta property="og:site_name" content="Fundara">
 <meta property="og:description" content="Dodge the holdback. Don't stack. A 3D multiplayer game that teaches merchant cash advances.">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/examples/jsm/"}}</script>
@@ -34,6 +35,7 @@
   <div id="board" class="card"></div>
   <canvas id="mini" width="300" height="300"></canvas>
   <div id="toast"></div>
+  <div id="brand">FUNDARA</div>
   <div id="hint">Hold RIGHT-CLICK or WASD to move · aim with mouse · LEFT-CLICK (or F) fires a notice · SPACE surge</div>
   <div id="stickL" class="stick"><i></i></div>
   <div id="stickR" class="stick"><i></i></div>
@@ -53,6 +55,7 @@
     </div>
     <button class="btn big" id="playBtn">PLAY NOW ▶</button>
     <small class="meta">Free · 2½-minute rounds · Phone or desktop · Play with friends via link</small>
+    <div class="powered">POWERED BY <b>FUNDARA</b></div>
   </div>
 </div>
 
@@ -66,6 +69,7 @@
     <button class="btn" id="gBtn" type="submit">UNLOCK PLAY ▶</button>
     <div class="err" id="gErr"></div>
     <small>We'll email your match recap and new maps. No spam, unsubscribe anytime.</small>
+    <div class="powered">POWERED BY <b>FUNDARA</b></div>
   </form>
 </div>
 
@@ -95,6 +99,7 @@
     <button class="btn" id="startBtn">START MATCH ▶</button>
     <small id="waitMsg" class="hidden">Waiting for the host to start… (you can run around meanwhile)</small>
     <small>Bots fill empty seats up to 4. Send the link — friends join the same match.</small>
+    <div class="powered">POWERED BY <b>FUNDARA</b></div>
   </div>
 </div>
 
@@ -106,6 +111,7 @@
     <div id="resLesson" class="lesson"></div>
     <div id="resXp" class="lesson hidden" style="background:rgba(61,220,151,.1);border-color:rgba(61,220,151,.4)"></div>
     <button class="btn" id="resBtn">BACK TO LOBBY</button>
+    <div class="powered">POWERED BY <b>FUNDARA</b></div>
   </div>
 </div>
 
