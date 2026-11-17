@@ -76,10 +76,10 @@
 <!-- Lobby -->
 <div id="lobby" class="overlay hidden">
   <div class="panel">
-    <h2>MAIN STREET LOBBY</h2>
+    <h2>LOBBY <span class="loc">· Main Street</span></h2>
     <p class="sub" id="lobbyTip"></p>
-    <details class="how" id="howD" open>
-      <summary><b>🎯 HOW TO WIN</b> <span class="tap">tap to toggle</span></summary>
+    <details class="how" id="howD">
+      <summary><b>🎯 HOW TO WIN</b> <span class="tap">tap to read ▾</span></summary>
       <ol>
         <li><b>You owe $6,750</b> on a $5,000 cash advance. Grab 🪙 coins (your sales) — <b>25% is auto-swept</b> to the lender.</li>
         <li><b>Be first to reach $0 owed</b> and the round ends. Otherwise the <b>highest net worth</b> (cash − debt) wins at 0:00.</li>
@@ -95,10 +95,10 @@
       <input id="shareLink" readonly>
       <button class="btn small" id="copyBtn">COPY LINK</button>
     </div>
-    <button class="btn small" id="qBtn" style="background:#2a3050;color:#cfd6f5;box-shadow:none">Graphics</button>
-    <button class="btn" id="startBtn">START MATCH ▶</button>
+    <div class="actions"><button class="btn small ghost" id="qBtn">⚙</button>
+    <button class="btn" id="startBtn">START MATCH ▶</button></div>
     <small id="waitMsg" class="hidden">Waiting for the host to start… (you can run around meanwhile)</small>
-    <small>Bots fill empty seats up to 4. Send the link — friends join the same match.</small>
+    <small class="botnote">Bots fill empty seats. Send the link — friends join your match.</small>
     <div class="powered">POWERED BY <a class="fundara" href="https://fundara.co" target="_blank" rel="noopener">FUNDARA</a></div>
   </div>
 </div>

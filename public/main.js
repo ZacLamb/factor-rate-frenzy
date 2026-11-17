@@ -446,11 +446,11 @@ function updateHud() {
 }
 function rankHtml(xp, lv) {
   const R = RANKS[lv], N = RANKS[lv + 1], pct = N ? Math.round((xp - R.xp) / (N.xp - R.xp) * 100) : 100;
-  const unlocked = RANKS.slice(1, lv + 1).map((r) => `<li>${r.i} <b>${r.n}</b>: ${r.perk}</li>`).join('');
+  const unlocked = RANKS.slice(1, lv + 1).map((r) => `${r.i} ${r.perk}`).join(' · ');
   return `<b>${R.i} ${R.n.toUpperCase()}</b> <span style="float:right">${xp} XP</span>
     <div class="bar" style="margin:6px 0"><i style="width:${pct}%;background:linear-gradient(90deg,#ffc83d,#fff1b5)"></i></div>
     <div style="font-size:12px;color:#c9c3a6">${N ? `Next: ${N.i} <b>${N.n}</b> at ${N.xp} XP — ${N.perk}` : 'Maximum rank reached. You are the Top Rep.'}</div>
-    ${unlocked ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:12px">${unlocked}</ul>` : ''}`;
+    ${unlocked ? `<div style="margin-top:4px;font-size:11px;color:#c9c3a6">Perks: ${unlocked}</div>` : ''}`;
 }
 function renderLobby() {
   const mr = roster.get(myId); if (mr) { $('#rankCard').innerHTML = rankHtml(mr.xp || 0, mr.lv || 0); $('#b-rank').textContent = RANKS[mr.lv || 0].i + ' ' + RANKS[mr.lv || 0].n; }
@@ -462,7 +462,7 @@ function buildSkins() {
   $('#skins').innerHTML = SKINS.map((s, i) => `<div class="skin ${i === mySkin ? 'sel' : ''}" data-i="${i}" title="${s.n}">${s.e}</div>`).join('');
   $('#skins').querySelectorAll('.skin').forEach((el) => el.onclick = () => { mySkin = +el.dataset.i; localStorage.setItem('frf_skin', mySkin); buildSkins(); room?.send('prof', { name: myName, skin: mySkin }); });
 }
-$('#qBtn').textContent = 'Graphics: ' + ({ low: 'Fast', high: 'High', ultra: 'Ultra' })[QUAL];
+$('#qBtn').textContent = '⚙ ' + ({ low: 'Fast', high: 'High', ultra: 'Ultra' })[QUAL]; $('#qBtn').title = 'Graphics quality (tap to change)';
 $('#qBtn').onclick = () => { localStorage.setItem('frf_q', { low: 'high', high: 'ultra', ultra: 'low' }[QUAL]); sessionStorage.removeItem('frf_dg'); location.reload(); };
 $('#startBtn').onclick = () => room?.send('start');
 $('#copyBtn').onclick = async () => {
