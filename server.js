@@ -148,6 +148,7 @@ class MatchRoom extends Room {
       if (this.clients.length < this.maxClients) this.unlock(); else this.lock();
       this.sendRoster();
     });
+    this.onMessage('ping', (c, m) => c.send('pong', m));
     this.onMessage('ab', (c) => { const p = this.players.get(c.sessionId); if (p) this.useSurge(p); });
     this.onMessage('start', (c) => { if (c.sessionId === this.hostId && this.phase === 'lobby') this.startRound(); });
     this.onMessage('prof', (c, m) => {
@@ -416,7 +417,7 @@ class MatchRoom extends Room {
       ph: this.phase, tl: Math.max(0, Math.round(this.tl * 10) / 10),
       p: [...this.players.values()].map((p) => [p.id, r2(p.x), r2(p.z), r2(p.ang), r2(p.stun), p.owed, p.cash, r2(p.hb), r2(p.boost), r2(p.surge), r2(p.surgeCd), p.swept, p.stacks, r2(p.shieldT), r2(p.hbCut)]),
       o: this.orbs.map((o) => [o.id, r2(o.x), r2(o.z), o.v, o.k]),
-      b: this.bullets.map((b) => [b.id, r2(b.x), r2(b.z), r2(Math.atan2(b.vx, b.vz))]),
+      b: this.bullets.map((b) => [b.id, r2(b.x), r2(b.z), r2(Math.atan2(b.vx, b.vz)), b.owner]),
     });
   }
 }
