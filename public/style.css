@@ -168,3 +168,6 @@ body.touch .lesson{font-size:12px;line-height:1.4;padding:10px}body.touch #resLi
 @keyframes pulse2{to{transform:translateX(-50%) scale(1.06)}}
 #b-zone{background:rgba(255,46,99,.25);color:#ffb0c4}
 body.touch #evt{top:calc(max(8px,env(safe-area-inset-top)) + 46px);font-size:11px}
+
+.hudMute{position:absolute;right:10px;top:calc(max(10px,env(safe-area-inset-top)) + 372px);width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:#fff;font-size:16px;pointer-events:auto;cursor:pointer}
+body.touch .hudMute{top:calc(max(10px,env(safe-area-inset-top)) + 126px);width:30px;height:30px;font-size:14px}

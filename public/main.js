@@ -33,17 +33,72 @@ if (touch) document.body.classList.add('touch');
 if (touch) $('#howD')?.removeAttribute('open');
 const me = { x: 0, z: 0, ang: 0, stun: 0, surgeCd: 0, surge: 0, boost: 0, owed: 0, cash: 0, hb: 0.25, swept: 0 };
 
-/* ---------- audio ---------- */
-let actx;
+/* ---------- audio: effects + generative music (no files, all synthesized) ---------- */
+let actx = null, master = null, musicG = null, sfxG = null, noiseBuf = null;
+let muted = false; try { muted = localStorage.getItem('frf_mute') === '1'; } catch {}
+function ac() {
+  if (!actx) {
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(actx.destination);
+      musicG = actx.createGain(); musicG.gain.value = 0.55; musicG.connect(master);
+      sfxG = actx.createGain(); sfxG.gain.value = 1; sfxG.connect(master);
+      noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.12, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    } catch { return null; }
+  }
+  if (actx.state === 'suspended') actx.resume().catch(() => {});
+  return actx;
+}
 function beep(f, d = 0.08, type = 'sine', v = 0.05, f2) {
+  const a = ac(); if (!a || muted) return;
   try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = actx.createOscillator(), g = actx.createGain();
-    o.type = type; o.frequency.value = f; if (f2) o.frequency.linearRampToValueAtTime(f2, actx.currentTime + d);
-    g.gain.value = v; g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + d);
-    o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + d);
+    const o = a.createOscillator(), g = a.createGain(), t = a.currentTime;
+    o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.linearRampToValueAtTime(f2, t + d);
+    g.gain.setValueAtTime(v * 1.6, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g).connect(sfxG); o.start(t); o.stop(t + d + 0.02);
   } catch {}
 }
+function jingle(win) { const n = win ? [523, 659, 784, 1047] : [392, 349, 330, 262]; n.forEach((f, i) => setTimeout(() => beep(f, 0.22, win ? 'triangle' : 'sine', 0.06), i * 120)); }
+let combo = 0, lastGainT = 0;
+function coinSfx() { const now = performance.now(); combo = now - lastGainT < 900 ? Math.min(combo + 1, 7) : 0; lastGainT = now; beep(523 * Math.pow(2, [0, 2, 4, 7, 9, 12, 14, 16][combo] / 12), 0.09, 'triangle', 0.045); }
+
+const TRACKS = {
+  main:   { bpm: 124, root: 45, scale: [0, 3, 5, 7, 10], chords: [0, -2, -4, -5], arp: [0, 2, 4, 2, 3, 1, 4, 2, 0, 2, 4, 5, 3, 1, 2, 1], arpWave: 'square', bassWave: 'triangle' },
+  tower:  { bpm: 100, root: 38, scale: [0, 1, 4, 5, 7, 8], chords: [0, 0, -4, -2], arp: [0, 3, 2, 3, 0, 4, 3, 2, 0, 3, 5, 3, 2, 4, 3, 1], arpWave: 'sawtooth', bassWave: 'sawtooth' },
+  slow:   { bpm: 84, root: 48, scale: [0, 2, 4, 7, 9], chords: [0, -3, -5, -7], arp: [0, 2, 4, 5, 4, 2, 3, 1, 0, 2, 4, 6, 4, 2, 1, 2], arpWave: 'sine', bassWave: 'sine' },
+  alley:  { bpm: 112, root: 40, scale: [0, 1, 3, 6, 7, 10], chords: [0, 1, 0, -1], arp: [0, 3, 1, 4, 2, 5, 3, 1, 0, 4, 2, 5, 1, 3, 2, 0], arpWave: 'square', bassWave: 'sawtooth' },
+  market: { bpm: 132, root: 48, scale: [0, 2, 4, 7, 9], chords: [0, 5, 7, 5], arp: [0, 2, 4, 5, 4, 2, 5, 4, 0, 2, 4, 6, 5, 4, 2, 0], arpWave: 'triangle', bassWave: 'triangle' },
+};
+const mtof = (n) => 440 * Math.pow(2, (n - 69) / 12);
+let musicTimer = null, mStep = 0, mNext = 0, mood = 'lobby', tempoMul = 1;
+function note(t, f, dur, type, vol, dest = musicG, lp = 0) {
+  const a = actx, o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let node = o; if (lp) { const fl = a.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = lp; o.connect(fl); node = fl; }
+  node.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+}
+function playStep(tr, step, t) {
+  const bar = Math.floor(step / 16) % 4, s = step % 16, root = tr.root + tr.chords[bar], full = mood === 'play';
+  if (s % 4 === 0 && full) { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16); o.connect(g).connect(musicG); o.start(t); o.stop(t + 0.18); }
+  if (s % 2 === 1 && actx && noiseBuf) { const src = actx.createBufferSource(), g = actx.createGain(), hp = actx.createBiquadFilter(); src.buffer = noiseBuf; hp.type = 'highpass'; hp.frequency.value = 7000; g.gain.setValueAtTime(full ? 0.07 : 0.03, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05); src.connect(hp).connect(g).connect(musicG); src.start(t); src.stop(t + 0.06); }
+  if (s % 4 === 0 || s === 10) note(t, mtof(root - 12), 0.22, tr.bassWave, full ? 0.2 : 0.12, musicG, 600);
+  if (s === 0) { note(t, mtof(root), 16 * 60 / tr.bpm / 4 * 0.95, 'sine', 0.045); note(t, mtof(root + tr.scale[2]), 16 * 60 / tr.bpm / 4 * 0.95, 'sine', 0.035); }
+  const ai = tr.arp[s], deg = tr.scale[ai % tr.scale.length] + 12 * Math.floor(ai / tr.scale.length);
+  if (full || s % 2 === 0) note(t, mtof(root + 12 + deg), 0.14, tr.arpWave, full ? 0.05 : 0.03, musicG, 2400);
+}
+function startMusic() {
+  if (musicTimer) return; const a = ac(); if (!a) return; mNext = a.currentTime + 0.12;
+  musicTimer = setInterval(() => {
+    if (muted || !actx || actx.state !== 'running') { if (actx) mNext = Math.max(mNext, actx.currentTime + 0.05); return; }
+    const tr = TRACKS[curMapId] || TRACKS.main, sp = 60 / (tr.bpm * tempoMul) / 4;
+    while (mNext < actx.currentTime + 0.15) { playStep(tr, mStep, mNext); mNext += sp; mStep++; }
+  }, 30);
+}
+function stopMusic() { clearInterval(musicTimer); musicTimer = null; }
+function setMood(x) { mood = x; if (x === 'none') stopMusic(); else startMusic(); }
+function setMuted(v) { muted = v; try { localStorage.setItem('frf_mute', v ? '1' : '0'); } catch {} if (master) master.gain.value = v ? 0 : 1; document.querySelectorAll('.muteBtn').forEach((b) => { b.textContent = v ? '🔇' : '🔊'; }); }
+document.addEventListener('visibilitychange', () => { if (!actx) return; if (document.hidden) actx.suspend().catch(() => {}); else actx.resume().catch(() => {}); });
+addEventListener('pointerdown', () => { if (actx) ac(); }, { passive: true });
 
 /* ---------- three.js scene ---------- */
 let QUAL = localStorage.getItem('frf_q') || (touch ? 'low' : 'high');
@@ -488,7 +543,7 @@ async function connect() {
     vib(6);
     floatText(me.x, me.z, 3.2, '+' + money(m.g - m.s), m.b ? '#ff9bd2' : '#3ddc97');
     if (m.s > 0 && Math.random() < 0.5) floatText(me.x + 0.5, me.z, 2.2, '−' + money(m.s) + ' holdback', '#ff5d6c');
-    beep(880 + Math.random() * 200, 0.07, 'triangle', 0.04);
+    coinSfx();
   });
   room.onMessage('fx', onFx);
   room.onMessage('results', onResults);
@@ -559,6 +614,7 @@ async function wakeOn() { try { if ('wakeLock' in navigator && !wl) { wl = await
 document.addEventListener('visibilitychange', () => { if (!document.hidden && phase === 'play') wakeOn(); });
 function onPhase(prev) {
   if (phase === 'play') wakeOn(); else { try { wl?.release(); } catch {} }
+  tempoMul = 1; if (phase === 'play') setMood('play'); else if (phase === 'lobby') setMood('lobby'); else setMood('none');
   if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner(curMap.icon + ' ' + curMap.name.toUpperCase(), 'Pay off your advance first. You owe $6,750 — 25% of each coin is swept to the lender. ' + curMap.blurb); beep(660, 0.3, 'square', 0.04, 990); }
   else if (phase === 'lobby') { $('#hud').classList.add('hidden'); if ($('#results').classList.contains('hidden')) $('#lobby').classList.remove('hidden'); renderLobby(); }
   else if (phase === 'results') { /* panel opened by 'results' message */ }
@@ -591,6 +647,7 @@ function updateHud() {
   const nh = performance.now(); if (nh - lastHud < 90) return; lastHud = nh;
   $('#tval').textContent = fmtTime(snap.tl);
   $('#tbar').firstElementChild.style.width = (snap.tl / cfg.ROUND * 100) + '%'; $('#timer').classList.toggle('warn', snap.tl <= 30 && phase === 'play');
+  tempoMul = phase === 'play' && snap.tl <= 20 ? 1.12 : 1;
   const sec = Math.ceil(snap.tl); if (phase === 'play' && sec <= 10 && sec !== lastSec) beep(sec <= 3 ? 880 : 600, 0.08, 'square', 0.03); lastSec = sec;
   { const z = curMap.rules.hbZone; $('#b-zone').classList.toggle('hidden', !(z && phase === 'play' && Math.hypot(me.x - z.x, me.z - z.z) < z.r)); }
   $('#b-shield').classList.toggle('hidden', !(me.shield > 0)); $('#b-cut').classList.toggle('hidden', !(me.cut > 0));
@@ -637,6 +694,7 @@ function buildSkins() {
   $('#skins').innerHTML = SKINS.map((s, i) => `<div class="skin ${i === mySkin ? 'sel' : ''}" data-i="${i}" title="${s.n}">${s.e}</div>`).join('');
   $('#skins').querySelectorAll('.skin').forEach((el) => el.onclick = () => { mySkin = +el.dataset.i; localStorage.setItem('frf_skin', mySkin); buildSkins(); room?.send('prof', { name: myName, skin: mySkin }); });
 }
+document.querySelectorAll('.muteBtn').forEach((b) => { b.textContent = muted ? '🔇' : '🔊'; b.onclick = () => { ac(); setMuted(!muted); if (!muted) beep(660, 0.1, 'triangle', 0.05); }; });
 $('#qBtn').title = 'Graphics quality (tap to change)';
 $('#qBtn').onclick = async () => { const qb = $('#qBtn'); qb.disabled = true; qb.textContent = '⚙ …'; await setQuality({ low: 'high', high: 'ultra', ultra: 'low' }[QUAL]); };
 $('#seatDn').onclick = () => room?.send('cfg', { seats: cfgS.seats - 1, bots: cfgS.bots });
@@ -677,7 +735,7 @@ function onResults(m) {
   }
   lastRes = { cleared: my?.cleared, rank, dur: m.dur }; vib([30, 60, 30]);
   $('#resXp').classList.add('hidden'); $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
-  beep(520, 0.25, 'triangle', 0.05, 780);
+  jingle(!!(my?.cleared) || rank === 1);
 }
 function onXp(x) {
   const lvl = RANKS[x.lv], next = RANKS[x.lv + 1];
@@ -736,7 +794,7 @@ $('#gateForm').addEventListener('submit', async (e) => {
   } catch { $('#gErr').textContent = 'Network problem. Please try again.'; $('#gBtn').disabled = false; }
 });
 function proceed() {
-  $('#intro').classList.add('hidden'); beep(520, 0.12, 'triangle', 0.04, 780);
+  $('#intro').classList.add('hidden'); beep(520, 0.12, 'triangle', 0.04, 780); setMood('lobby');
   try { const l = JSON.parse(localStorage.getItem('frf_lead') || 'null'); if (l?.email) { myName = l.name; afterGate(); } else showGate(); } catch { showGate(); }
 }
 $('#playBtn').onclick = proceed;
