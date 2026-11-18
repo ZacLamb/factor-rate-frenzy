@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ARENA, SHOPS, resolve, RULES, RANKS, levelFor, perks } from './shared.js';
+import { ARENA, resolve, RULES, RANKS, levelFor, perks, MAPS, MAP_IDS, setActiveMap } from './shared.js';
 
 const $ = (s) => document.querySelector(s);
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
@@ -25,7 +25,7 @@ if (!pid) { pid = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toStr
 const myLv = () => roster.get(myId)?.lv || 0;
 
 /* ---------- state ---------- */
-let cfgS = { seats: 4, bots: true };
+let cfgS = { seats: 4, bots: true, map: 'main' };
 let room = null, myId = null, roster = new Map(), hostId = null, phase = 'lobby', snap = null;
 let myName = '', mySkin = +localStorage.getItem('frf_skin') || 0, code = '';
 const touch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
@@ -57,7 +57,7 @@ function canvasTexEarly(w, h, draw) { const c = document.createElement('canvas')
 scene.background = canvasTexEarly(16, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#16307a'); gr.addColorStop(0.5, '#8a4aa8'); gr.addColorStop(1, '#ff9a5e'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
 scene.fog = new THREE.Fog(0x5a4290, 85, 240);
 const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 300);
-scene.add(new THREE.HemisphereLight(0xd6ecff, 0x7a5a8a, 1.25));
+const hemi = new THREE.HemisphereLight(0xd6ecff, 0x7a5a8a, 1.25); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffc88a, 2.1);
 sun.castShadow = QUAL !== 'low';
 sun.shadow.mapSize.set(QUAL === 'ultra' ? 2048 : 1024, QUAL === 'ultra' ? 2048 : 1024);
@@ -152,21 +152,27 @@ function applyQuality(q) {
   const qb = document.querySelector('#qBtn'); if (qb) { qb.textContent = '⚙ ' + QNAME[q]; qb.disabled = false; }
 }
 async function setQuality(q) { if (q !== 'low') await ensureFx(); applyQuality(q); }
+let plazaRing = null;
 // arena plaza
 const plaza = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ roughness: 0.85, map: canvasTex(512, 512, (g, w, h) => {
   g.fillStyle = '#5a4e70'; g.fillRect(0, 0, w, h); const n = 10, s = w / n; for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { g.fillStyle = (x + y) % 2 ? '#8a7a98' : '#9a8aa6'; g.fillRect(x * s + 2, y * s + 2, s - 4, s - 4); }
   g.strokeStyle = 'rgba(255,200,61,.9)'; g.lineWidth = 14; g.beginPath(); g.arc(w / 2, h / 2, w * 0.46, 0, 6.3); g.stroke();
   g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 6; g.beginPath(); g.arc(w / 2, h / 2, w * 0.3, 0, 6.3); g.stroke();
 }) }));
-{ const pr = new THREE.Mesh(new THREE.TorusGeometry(15.1, 0.14, 6, 72), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x35e8ff).multiplyScalar(2.2) })); pr.rotation.x = Math.PI / 2; pr.position.y = 0.07; scene.add(pr); }
+{ const pr = new THREE.Mesh(new THREE.TorusGeometry(15.1, 0.14, 6, 72), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x35e8ff).multiplyScalar(2.2) })); pr.rotation.x = Math.PI / 2; pr.position.y = 0.07; plazaRing = pr; scene.add(pr); }
 plaza.rotation.x = -Math.PI / 2; plaza.position.y = 0.02; plaza.receiveShadow = true; scene.add(plaza);
 // walls
 const wallM = new THREE.MeshStandardMaterial({ color: 0x4a4f6a, roughness: 0.8 });
 for (const [x, z, w, d] of [[0, -ARENA - 1, ARENA * 2 + 4, 2], [0, ARENA + 1, ARENA * 2 + 4, 2], [-ARENA - 1, 0, 2, ARENA * 2], [ARENA + 1, 0, 2, ARENA * 2]]) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, 2.4, d), wallM); m.position.set(x, 1.2, z); m.castShadow = true; scene.add(m);
 }
-// buildings
-for (const b of SHOPS) {
+// buildings (rebuilt whenever the map changes)
+let curNeon = 0x35e8ff, curMapId = 'main', curMap = MAPS.main, curShops = MAPS.main.shops, builtOnce = false;
+const mapGroup = new THREE.Group(); scene.add(mapGroup);
+function disposeObj(o) { o.geometry?.dispose?.(); const ms = o.material; if (ms) (Array.isArray(ms) ? ms : [ms]).forEach((x) => { x.map?.dispose?.(); x.emissiveMap?.dispose?.(); x.dispose?.(); }); }
+function buildShops(M) {
+  while (mapGroup.children.length) { const o = mapGroup.children[mapGroup.children.length - 1]; mapGroup.remove(o); o.traverse(disposeObj); }
+  for (const b of M.shops) {
   const g = new THREE.Group(); g.position.set(b.x, 0, b.z);
   const wm = b.label ? windowMaps(b.w, b.h, '#' + b.color.toString(16).padStart(6, '0'), b.hq ? 0.35 : 0.6) : null;
   const body = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), wm
@@ -187,7 +193,7 @@ for (const b of SHOPS) {
     }
   }
   if (b.label && !b.hq) {
-    const cy = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x35e8ff).multiplyScalar(2.2) });
+    const cy = new THREE.MeshBasicMaterial({ color: new THREE.Color(curNeon).multiplyScalar(2.2) });
     for (const [w, d, x, z] of [[b.w + 0.3, 0.14, 0, b.d / 2 + 0.07], [b.w + 0.3, 0.14, 0, -b.d / 2 - 0.07], [0.14, b.d, b.w / 2 + 0.07, 0], [0.14, b.d, -b.w / 2 - 0.07, 0]]) { const t = new THREE.Mesh(new THREE.BoxGeometry(w, 0.14, d), cy); t.position.set(x, b.h + 0.05, z); g.add(t); }
   }
   if (b.label && !b.hq) {
@@ -201,8 +207,25 @@ for (const b of SHOPS) {
     const c = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.35, 12, 28), new THREE.MeshStandardMaterial({ color: 0xff3d4d, emissive: 0xff1030, emissiveIntensity: 3 }));
     c.position.y = b.h + 2; c.name = 'hqRing'; g.add(c);
   }
-  scene.add(g);
+  if (b.stall) {
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.8, 0.25, b.d + 0.8), new THREE.MeshStandardMaterial({ map: canvasTex(128, 32, (c, w, h) => { for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#ffffff' : '#' + b.awning.toString(16).padStart(6, '0'); c.fillRect(i * 16, 0, 16, h); } }) }));
+    roof.position.y = b.h + 0.2; roof.castShadow = true; g.add(roof);
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(b.w * 0.8, 0.5, 0.6), new THREE.MeshStandardMaterial({ color: 0xffe0a0 })); crate.position.set(0, 1.2, b.d / 2 + 0.35); g.add(crate);
+  }
+  if (b.fountain) { const jet = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2, 2.4) })); jet.position.y = b.h + 1.2; g.add(jet); }
+  if (!b.label && !b.planter && !b.stall && !b.fountain && b.h >= 3) {
+    const along = b.w >= b.d; const strip = new THREE.Mesh(new THREE.BoxGeometry(along ? b.w : 0.2, 0.14, along ? 0.2 : b.d), new THREE.MeshBasicMaterial({ color: new THREE.Color(curNeon).multiplyScalar(2.2) })); strip.position.set(0, b.h + 0.07, 0); g.add(strip);
+  }
+    mapGroup.add(g);
+  }
+  if (M.rules.hbZone) {
+    const z = M.rules.hbZone, disc = new THREE.Mesh(new THREE.CircleGeometry(z.r, 48), new THREE.MeshBasicMaterial({ color: 0xff2e63, transparent: true, opacity: 0.16, depthWrite: false }));
+    disc.rotation.x = -Math.PI / 2; disc.position.set(z.x, 0.05, z.z); mapGroup.add(disc);
+    const rg = new THREE.Mesh(new THREE.TorusGeometry(z.r, 0.18, 6, 72), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.4, 0.7) })); rg.rotation.x = Math.PI / 2; rg.position.set(z.x, 0.08, z.z); mapGroup.add(rg);
+    const lbl = textSprite('HIGH-HOLDBACK ZONE', '#ff8fa8', 7); lbl.position.set(z.x, 2.4, z.z + z.r); mapGroup.add(lbl);
+  }
 }
+buildShops(MAPS.main);
 // "Powered by Fundara" banners on the north and south walls
 for (const z of [-ARENA - 1.05, ARENA + 1.05]) {
   const bn = new THREE.Mesh(new THREE.PlaneGeometry(26, 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.3, 1.3), map: canvasTex(1024, 80, (g, w, h) => { g.fillStyle = '#12142a'; g.fillRect(0, 0, w, h); g.fillStyle = '#9aa1c6'; g.font = '600 26px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('P O W E R E D   B Y', w * 0.36, h / 2); g.fillStyle = '#1fd1a5'; g.font = '900 44px system-ui'; g.fillText('FUNDARA', w * 0.64, h / 2 + 2); }) }));
@@ -458,7 +481,7 @@ async function connect() {
   } catch (e) { return showMsg('Could not join', 'This match is full (the host can raise the player limit in the lobby) or the server is busy. Try again or start a new link.'); }
   myId = room.sessionId;
   room.onLeave(() => showMsg('Disconnected', 'Lost connection to the match.'));
-  room.onMessage('roster', (m) => { hostId = m.host; cfgS = m.cfg || cfgS; roster = new Map(m.p.map((p) => [p.id, p])); renderLobby(); });
+  room.onMessage('roster', (m) => { hostId = m.host; cfgS = m.cfg || cfgS; roster = new Map(m.p.map((p) => [p.id, p])); if (cfgS.map && cfgS.map !== curMapId) setMap(cfgS.map); renderLobby(); });
   room.onMessage('spawn', (m) => { me.x = m.x; me.z = m.z; });
   room.onMessage('snap', onSnap);
   room.onMessage('gain', (m) => {
@@ -536,7 +559,7 @@ async function wakeOn() { try { if ('wakeLock' in navigator && !wl) { wl = await
 document.addEventListener('visibilitychange', () => { if (!document.hidden && phase === 'play') wakeOn(); });
 function onPhase(prev) {
   if (phase === 'play') wakeOn(); else { try { wl?.release(); } catch {} }
-  if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner('PAY OFF YOUR ADVANCE FIRST', 'You owe $6,750. Grab coins — 25% of each is swept to the lender. First to $0 wins, otherwise highest net worth at 0:00. Grab power-ups, avoid the red STACK pods.'); beep(660, 0.3, 'square', 0.04, 990); }
+  if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner(curMap.icon + ' ' + curMap.name.toUpperCase(), 'Pay off your advance first. You owe $6,750 — 25% of each coin is swept to the lender. ' + curMap.blurb); beep(660, 0.3, 'square', 0.04, 990); }
   else if (phase === 'lobby') { $('#hud').classList.add('hidden'); if ($('#results').classList.contains('hidden')) $('#lobby').classList.remove('hidden'); renderLobby(); }
   else if (phase === 'results') { /* panel opened by 'results' message */ }
 }
@@ -556,6 +579,7 @@ function onFx(f) {
     const names = { 2: 'Early-payoff discount: −$600 off your payback!', 3: 'Legal shield! Immune to notices for 8s.', 4: 'Holdback holiday! Sweep drops to 40% for 10s (a reconciliation).' };
     burst(f.x, f.z, ORB_COL[f.pk], 18); if (f.id === myId) { toast(names[f.pk], 'good'); beep(700, 0.25, 'triangle', 0.05, 1100); }
   } else if (f.k === 'block') { addRing(f.x, f.z, 0x4cc9f0, 5); if (f.id === myId) { toast('Shield blocked a notice!', 'good'); beep(900, 0.1, 'square', 0.04); } }
+  else if (f.k === 'rush') { $('#evt').textContent = f.on ? '🎪 BUSY SEASON! Sales ×1.5 — grab the coins!' : ''; $('#evt').classList.toggle('hidden', !f.on); if (f.on) { toast('Busy season! Coins everywhere for 15 seconds.', 'good'); beep(700, 0.3, 'triangle', 0.05, 1100); } }
   else if (f.k === 'free') toast(`${f.n} is DEBT-FREE — round over!`, 'good');
 }
 
@@ -568,6 +592,7 @@ function updateHud() {
   $('#tval').textContent = fmtTime(snap.tl);
   $('#tbar').firstElementChild.style.width = (snap.tl / cfg.ROUND * 100) + '%'; $('#timer').classList.toggle('warn', snap.tl <= 30 && phase === 'play');
   const sec = Math.ceil(snap.tl); if (phase === 'play' && sec <= 10 && sec !== lastSec) beep(sec <= 3 ? 880 : 600, 0.08, 'square', 0.03); lastSec = sec;
+  { const z = curMap.rules.hbZone; $('#b-zone').classList.toggle('hidden', !(z && phase === 'play' && Math.hypot(me.x - z.x, me.z - z.z) < z.r)); }
   $('#b-shield').classList.toggle('hidden', !(me.shield > 0)); $('#b-cut').classList.toggle('hidden', !(me.cut > 0));
   $('#b-hb').textContent = Math.round(me.hb * (me.cut > 0 ? 0.4 : 1) * 100) + '%';
   $('#b-owed').textContent = money(me.owed); $('#b-cash').textContent = money(me.cash); $('#b-swept').textContent = money(me.swept);
@@ -598,6 +623,10 @@ function rankHtml(xp, lv) {
 function renderLobby() {
   const mr = roster.get(myId); if (mr) { $('#rankCard').innerHTML = rankHtml(mr.xp || 0, mr.lv || 0); $('#b-rank').textContent = RANKS[mr.lv || 0].i + ' ' + RANKS[mr.lv || 0].n; }
   $('#roster').innerHTML = [...roster.values()].map((p) => `<div class="pl"><span>${SKINS[p.s].e}</span>${p.lv ? RANKS[p.lv].i + ' ' : ''}${p.n}${p.id === myId ? ' (you)' : ''}<em>${p.id === hostId ? 'HOST' : ''}</em></div>`).join('');
+  { const isH = hostId === myId, M = MAPS[cfgS.map] || MAPS.main;
+    $('#mapRow').innerHTML = MAP_IDS.map((id) => `<button type="button" class="mapchip ${id === (cfgS.map || 'main') ? 'on' : ''}" data-id="${id}" ${isH ? '' : 'disabled'}>${MAPS[id].icon}<span>${MAPS[id].name}</span></button>`).join('');
+    $('#mapRow').querySelectorAll('.mapchip').forEach((b) => { b.onclick = () => room?.send('cfg', { seats: cfgS.seats, bots: cfgS.bots, map: b.dataset.id }); });
+    $('#mapBlurb').textContent = M.blurb; $('#locName').textContent = '· ' + M.name; }
   $('#seatN').textContent = cfgS.seats; $('#botTgl').checked = cfgS.bots;
   const isHost = hostId === myId; for (const id of ['#seatDn', '#seatUp', '#botTgl']) $(id).disabled = !isHost;
   $('#seatDn').disabled = !isHost || cfgS.seats <= Math.max(2, [...roster.values()].filter((p) => !p.b).length); $('#seatUp').disabled = !isHost || cfgS.seats >= 8;
@@ -644,6 +673,7 @@ function onResults(m) {
     $('#resLesson').innerHTML = `<b>Your books:</b> advance ${money(my.advance)} → payback ${money(my.payback)} (cost ${money(cost)}, ${(my.payback / my.advance).toFixed(2)}× blended factor).<br>` +
       `<b>Effective APR ≈ ${a.toLocaleString()}%.</b> A factor rate isn't an interest rate — the faster you repay a fixed fee, the higher the APR.` +
       (my.stacks ? `<br><b>You stacked ${my.stacks}×:</b> extra cash cost you ${money(my.stacks * Math.round(cfg.STACK_ADV * cfg.STACK_FACTOR - cfg.STACK_ADV))} more in fees and a bigger holdback.` : `<br><b>No stacking</b> — you kept the cost fixed at ${money(cost)}.`);
+    $('#resLesson').innerHTML += `<br><b>${curMap.icon} ${curMap.name}:</b> ${curMap.lesson.replace(/^[^:]+: /, '')}`;
   }
   lastRes = { cleared: my?.cleared, rank, dur: m.dur }; vib([30, 60, 30]);
   $('#resXp').classList.add('hidden'); $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
@@ -723,14 +753,32 @@ aimLine.position.y = 0.12; aimLine.visible = false; scene.add(aimLine);
 let frameN = 0, hqRing = null, ema = 16, adaptT = 0;
 const clock = new THREE.Clock(); let t = 0;
 const camPos = new THREE.Vector3(0, 30, 20);
+const RAIN_N = 280, rainPos = new Float32Array(RAIN_N * 6);
+for (let i = 0; i < RAIN_N; i++) { const x = (Math.random() * 2 - 1) * 46, y = Math.random() * 30, z = (Math.random() * 2 - 1) * 46; rainPos.set([x, y, z, x - 0.3, y - 1.4, z], i * 6); }
+const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0x9fc4ff, transparent: true, opacity: 0.45 })); rain.visible = false; rain.frustumCulled = false; scene.add(rain);
+function skyTexture(c) { return canvasTexEarly(16, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, c[0]); gr.addColorStop(0.5, c[1]); gr.addColorStop(1, c[2]); g.fillStyle = gr; g.fillRect(0, 0, w, h); }); }
+function applyTheme(t) {
+  scene.background?.dispose?.(); scene.background = skyTexture(t.sky); scene.fog.color.set(t.fog);
+  hemi.color.set(t.hemi[0]); hemi.groundColor.set(t.hemi[1]); hemi.intensity = t.hemi[2]; sun.color.set(t.sun[0]); sun.intensity = t.sun[1];
+  ground.material.color.set(t.ground); plaza.material.color.set(t.ground); plaza.visible = t.plaza !== false;
+  curNeon = t.neon; neonM.color.set(t.neon).multiplyScalar(2.4);
+  if (plazaRing) { plazaRing.material.color.set(t.neon).multiplyScalar(2.2); plazaRing.visible = t.plaza !== false; }
+  renderer.toneMappingExposure = t.exposure || 1.3;
+}
+function setMap(id) {
+  const M = MAPS[id] || MAPS.main; if (builtOnce && id === curMapId) return; builtOnce = true;
+  curMapId = id; curMap = M; curShops = M.shops; setActiveMap(id); applyTheme(M.theme); buildShops(M); hqRing = null; rain.visible = !!M.rules.rain;
+}
 const mini = $('#mini'), mg = mini.getContext('2d');
 function drawMini() {
   if (!snap || phase !== 'play') return;
   const W = mini.width, S = W / (ARENA * 2 + 4), X = (x) => (x + ARENA + 2) * S, Z = (z) => (z + ARENA + 2) * S;
   mg.clearRect(0, 0, W, W);
   mg.fillStyle = 'rgba(40,46,70,.9)'; mg.fillRect(X(-ARENA), Z(-ARENA), ARENA * 2 * S, ARENA * 2 * S);
-  for (const b of SHOPS) { mg.fillStyle = b.hq ? '#ff3d4d' : '#' + b.color.toString(16).padStart(6, '0'); mg.globalAlpha = b.label ? 0.9 : 0.5; mg.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * S, b.d * S); }
+  for (const b of curShops) { mg.fillStyle = b.hq ? '#ff3d4d' : '#' + b.color.toString(16).padStart(6, '0'); mg.globalAlpha = b.label ? 0.9 : 0.5; mg.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * S, b.d * S); }
   mg.globalAlpha = 1;
+  { const z = curMap.rules.hbZone; if (z) { mg.strokeStyle = 'rgba(255,46,99,.85)'; mg.lineWidth = 2; mg.beginPath(); mg.arc(X(z.x), Z(z.z), z.r * S, 0, 6.3); mg.stroke(); } }
   for (const o of snap.o) { mg.fillStyle = '#' + (ORB_COL[o[4]] || 0xffc83d).toString(16).padStart(6, '0'); const r = o[4] ? 7 : 3.2; mg.beginPath(); mg.arc(X(o[1]), Z(o[2]), r, 0, 6.3); mg.fill(); if (o[4]) { mg.strokeStyle = '#fff'; mg.lineWidth = 1.5; mg.stroke(); } }
   for (const b of snap.b) { mg.fillStyle = '#fff'; mg.fillRect(X(b[1]) - 2, Z(b[2]) - 2, 4, 4); }
   for (const a of snap.p) {
@@ -809,6 +857,7 @@ function frame() {
     const k = 1 - Math.exp(-10 * dt); m.position.x += (u.tx + vx * ahead - m.position.x) * k; m.position.z += (u.tz + vz * ahead - m.position.z) * k; } }
   for (let i = fxList.length - 1; i >= 0; i--) { const f = fxList[i]; if (f.p) { f.t += dt * 1.8; f.vy -= 22 * dt; f.m.position.x += f.vx * dt; f.m.position.y = Math.max(0.1, f.m.position.y + f.vy * dt); f.m.position.z += f.vz * dt; f.m.scale.setScalar(Math.max(0.01, 1 - f.t)); if (f.t >= 1) { scene.remove(f.m); fxList.splice(i, 1); } continue; } f.t += dt * 2.2; f.m.scale.setScalar(1 + f.t * f.max); f.m.material.opacity = Math.max(0, 1 - f.t); if (f.t >= 1) { scene.remove(f.m); fxList.splice(i, 1); } }
   { const p = confGeo.attributes.position.array; for (let i = 0; i < CONF; i++) { p[i * 3 + 1] += dt * (0.6 + (i % 5) * 0.25); p[i * 3] += Math.sin(t * 0.6 + i) * dt * 0.5; if (p[i * 3 + 1] > 14) p[i * 3 + 1] = 0.3; } confGeo.attributes.position.needsUpdate = true; }
+  if (rain.visible) { const p = rainGeo.attributes.position.array; for (let i = 0; i < RAIN_N; i++) { const o = i * 6; p[o + 1] -= 38 * dt; p[o + 4] -= 38 * dt; if (p[o + 1] < 0) { p[o + 1] = 30; p[o + 4] = 28.6; } } rainGeo.attributes.position.needsUpdate = true; }
   if (!hqRing) hqRing = scene.getObjectByName('hqRing'); if (hqRing) hqRing.rotation.y += dt * 2;
   if (QUAL !== 'low') { sun.position.set(me.x - 30, 50, me.z + 20); sun.target.position.set(me.x, 0, me.z); }
   // camera

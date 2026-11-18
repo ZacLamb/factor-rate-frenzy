@@ -24,6 +24,7 @@
 
 <!-- HUD -->
 <div id="hud" class="hidden">
+  <div id="evt" class="hidden"></div>
   <div id="timer"><span id="tphase">ROUND</span><b id="tval">2:30</b><div id="tbar"><i></i></div></div>
   <div id="goal">🎯 Pay off your debt FIRST — or finish with the most cash after debt</div>
   <div id="books" class="card">
@@ -37,6 +38,7 @@
     <div class="row hide-m"><span>Swept to lender</span><b id="b-swept">$0</b></div>
     <div class="row" style="margin-top:4px"><span>Net worth</span><b id="b-net">$0</b></div>
     <div id="b-boost" class="chip hidden">2× SALES BOOST</div>
+    <div id="b-zone" class="chip hidden">⚠ HIGH-HOLDBACK ZONE ×1.4</div>
     <div id="b-shield" class="chip blue hidden">🛡 LEGAL SHIELD</div>
     <div id="b-cut" class="chip purple hidden">⏬ HOLDBACK HOLIDAY</div>
   </div>
@@ -89,7 +91,7 @@
 <!-- Lobby -->
 <div id="lobby" class="overlay hidden">
   <div class="panel">
-    <h2>LOBBY <span class="loc">· Main Street</span></h2>
+    <h2>LOBBY <span class="loc" id="locName">· Main Street</span></h2>
     <p class="sub" id="lobbyTip"></p>
     <details class="how" id="howD">
       <summary><b>🎯 HOW TO WIN</b> <span class="tap">tap to read ▾</span></summary>
@@ -105,6 +107,7 @@
     <details class="how" id="missionsD"><summary><b>🔥 DAILY MISSIONS</b> <span class="tap" id="missSum"></span></summary><div id="missList"></div></details>
     <div class="skins" id="skins"></div>
     <div id="roster"></div>
+    <div class="maprow" id="mapRow"></div><small id="mapBlurb"></small>
     <div class="cfgrow"><span>Players</span><div class="stepper"><button id="seatDn" type="button">−</button><b id="seatN">4</b><button id="seatUp" type="button">+</button></div><label class="tgl"><input type="checkbox" id="botTgl" checked> Fill with bots</label></div>
     <div class="share">
       <input id="shareLink" readonly>
