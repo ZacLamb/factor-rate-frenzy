@@ -5,14 +5,15 @@ import { fileURLToPath } from 'url';
 import pg from 'pg';
 import { Server, Room } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { ARENA, resolve, RULES, levelFor, perks } from './public/shared.js';
+import { ARENA, resolve, RULES, RANKS, levelFor, perks } from './public/shared.js';
+import { makeStore, checkName, checkEmailStatic, domainCanReceive, sha, token } from './leads.js';
+import { mailerEnabled, sendMail, confirmEmail, recapEmail, BASE } from './mail.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 2567;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 fs.mkdirSync(DATA_DIR, { recursive: true });
-const LEADS = path.join(DATA_DIR, 'leads.jsonl');
 
 /* ---------------- static + lead API ---------------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
@@ -20,18 +21,12 @@ const VENDOR = {
   '/vendor/three.module.js': 'node_modules/three/build/three.module.js',
   '/vendor/colyseus.js': 'node_modules/colyseus.js/dist/colyseus.js',
 };
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const hits = new Map();
 const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 8) || Date.now().toString(36);
 const DB_URL = process.env.DATABASE_URL;
 const pool = DB_URL ? new pg.Pool({ connectionString: DB_URL, ssl: /railway\.internal|localhost/.test(DB_URL) ? false : { rejectUnauthorized: false } }) : null;
-if (pool) pool.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT now(), name TEXT NOT NULL, email TEXT NOT NULL, ref TEXT DEFAULT '')`)
-  .then(() => console.log('leads table ready')).catch((e) => console.error('DB init failed', e.message));
-async function saveLead(row) {
-  console.log('LEAD', JSON.stringify(row));
-  if (pool) { await pool.query('INSERT INTO leads (name,email,ref) VALUES ($1,$2,$3)', [row.name, row.email, row.ref]); return; }
-  fs.appendFileSync(LEADS, JSON.stringify(row) + '\n');
-}
+const store = makeStore(pool, DATA_DIR);
+store.init().then(() => console.log('leads store ready')).catch((e) => console.error('leads init failed', e.message));
+const SALT = process.env.IP_SALT || ADMIN_KEY || 'frf';
 const PROG = path.join(DATA_DIR, 'progress.json');
 if (pool) pool.query(`CREATE TABLE IF NOT EXISTS progress (pid TEXT PRIMARY KEY, name TEXT, xp INT NOT NULL DEFAULT 0, matches INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())`)
   .then(() => pool.query(`ALTER TABLE progress ADD COLUMN IF NOT EXISTS wins INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS streak INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_day TEXT, ADD COLUMN IF NOT EXISTS wk TEXT, ADD COLUMN IF NOT EXISTS wxp INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS daily TEXT`))
@@ -91,35 +86,89 @@ async function topPlayers(period) {
   lbCache[k] = { t: Date.now(), rows };
   return rows;
 }
-async function loadLeads() {
-  if (pool) return (await pool.query('SELECT created_at, name, email, ref FROM leads ORDER BY id')).rows.map((r) => ({ ts: new Date(r.created_at).toISOString(), name: r.name, email: r.email, ref: r.ref }));
-  return fs.existsSync(LEADS) ? fs.readFileSync(LEADS, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+const hitsByIp = new Map();
+function clientIp(req) { return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'x'; }
+// Per-IP limits sized so a whole office on one network can still sign up: 40 attempts/hour, 25 new leads/hour.
+function bump(map, ip) { const now = Date.now(), arr = (map.get(ip) || []).filter((t) => now - t < 3600e3); arr.push(now); map.set(ip, arr); if (map.size > 5000) for (const [k, a] of map) if (!a.some((t) => now - t < 3600e3)) map.delete(k); return arr.length; }
+const newByIp = new Map();
+const rateLimited = (ip) => bump(hitsByIp, ip) > 40;
+const readJson = (req, max = 4096) => new Promise((resolve, reject) => { let b = ''; req.on('data', (d) => { b += d; if (b.length > max) { req.destroy(); reject(new Error('big')); } }); req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch (e) { reject(e); } }); req.on('error', reject); });
+const sendJson = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(obj)); };
+const page = (res, title, msg, href = BASE, label = 'Back to the game') => { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(`<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><title>${title}</title><body style="margin:0;background:#0e1030;color:#e8e6ff;font-family:Arial,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center;padding:20px"><div style="max-width:420px"><div style="font-size:28px;font-weight:900;color:#ffc83d">FACTOR RATE FRENZY</div><h2>${title}</h2><p style="color:#c9c3ff;line-height:1.5">${msg}</p><a href="${href}" style="display:inline-block;background:#ffc83d;color:#241a00;font-weight:800;text-decoration:none;padding:13px 22px;border-radius:12px">${label}</a><p style="font-size:11px;color:#8d93b0;margin-top:28px">Powered by Fundara</p></div>`); };
+const adminOk = (url) => ADMIN_KEY && url.searchParams.get('key') === ADMIN_KEY;
+
+async function verifyTurnstile(tok, ip) {
+  const secret = process.env.TURNSTILE_SECRET; if (!secret) return true;
+  try { const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: new URLSearchParams({ secret, response: String(tok || ''), remoteip: ip }) }); return !!(await r.json()).success; } catch { return false; }
+}
+
+async function handleLead(req, res) {
+  const ip = clientIp(req);
+  if (rateLimited(ip)) return sendJson(res, 429, { ok: false, error: 'rate' });
+  let j; try { j = await readJson(req); } catch { return sendJson(res, 400, { ok: false, error: 'bad' }); }
+  if (j.hp) return sendJson(res, 200, { ok: true }); // honeypot filled: pretend success, store nothing
+  if (!(Number(j.dt) > 1500)) return sendJson(res, 400, { ok: false, error: 'fast' }); // submitted faster than a human can type
+  if (!(await verifyTurnstile(j.cf, ip))) return sendJson(res, 400, { ok: false, error: 'captcha' });
+  const nm = checkName(j.name); if (!nm.ok) return sendJson(res, 400, { ok: false, error: 'name' });
+  const em = checkEmailStatic(j.email); if (!em.ok) return sendJson(res, 400, { ok: false, error: em.reason, suggest: em.suggest });
+  const can = await domainCanReceive(em.domain); if (can === false) return sendJson(res, 400, { ok: false, error: 'domain' });
+  const pid = String(j.pid || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64), optin = !!j.optin, now = new Date().toISOString();
+  let lead = await store.byEmail(em.email);
+  if (lead) {
+    const patch = { name: nm.name, pid: pid || lead.pid, ip_hash: sha(ip + SALT) };
+    if (optin && !lead.newsletter) { patch.newsletter = true; patch.consent_at = now; }
+    await store.update(em.email, patch); lead = { ...lead, ...patch };
+  } else {
+    if (bump(newByIp, ip) > 25) return sendJson(res, 429, { ok: false, error: 'rate' });
+    lead = { name: nm.name, email: em.email, ref: String(j.ref || '').slice(0, 60), pid, newsletter: optin, consent_at: optin ? now : null, status: 'unverified', verify_token: token(), unsub_token: token(), mx_ok: can, ip_hash: sha(ip + SALT), risk: em.risk };
+    await store.insert(lead); console.log('LEAD', lead.name, em.domain, lead.risk);
+  }
+  if (mailerEnabled && lead.status !== 'verified' && lead.risk === 'ok' && (!lead.last_confirm || Date.now() - new Date(lead.last_confirm) > 3600e3)) {
+    const m = confirmEmail(lead, `${BASE}/verify?t=${lead.verify_token}`);
+    if (await sendMail({ to: lead.email, ...m })) await store.update(em.email, { last_confirm: now });
+  }
+  sendJson(res, 200, { ok: true, verify: mailerEnabled });
+}
+
+async function auditLeads() {
+  const rows = await store.all(), domainCache = new Map(), counts = { ok: 0, suspect: 0, invalid: 0 }, reasons = {}, bursts = {}, examples = [];
+  for (const r of rows) {
+    let risk = 'ok', why = '';
+    const nm = checkName(r.name), em = checkEmailStatic(r.email);
+    if (!em.ok) { risk = 'invalid'; why = em.reason; } else if (!nm.ok) { risk = 'invalid'; why = 'name'; }
+    else {
+      if (!domainCache.has(em.domain)) domainCache.set(em.domain, await domainCanReceive(em.domain));
+      if (domainCache.get(em.domain) === false) { risk = 'invalid'; why = 'domain'; } else if (em.risk !== 'ok') { risk = 'suspect'; why = em.risk.split(':')[1]; }
+    }
+    counts[risk]++; if (why) reasons[why] = (reasons[why] || 0) + 1;
+    const hr = String(r.created_at || '').slice(0, 13); if (hr) bursts[hr] = (bursts[hr] || 0) + 1;
+    if (risk !== 'ok' && examples.length < 25) examples.push({ name: r.name, email: r.email, why });
+    const tag = risk === 'ok' ? 'ok' : `${risk}:${why}`; if (r.risk !== tag) await store.update(String(r.email).toLowerCase(), { risk: tag });
+  }
+  const burstHours = Object.entries(bursts).filter(([, n]) => n >= 25).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([h, n]) => ({ hour: h, signups: n }));
+  return { total: rows.length, ...counts, reasons, burstHours, examples, note: 'Run POST /api/leads/purge?key=…&confirm=yes to delete rows marked invalid. Suspect rows are kept but excluded from mailing lists.' };
 }
 
 function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/health') { res.end('ok'); return; }
 
-  if (url.pathname === '/api/lead' && req.method === 'POST') {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const n = (hits.get(ip) || 0) + 1; hits.set(ip, n);
-    setTimeout(() => hits.set(ip, Math.max(0, (hits.get(ip) || 1) - 1)), 60000);
-    if (n > 20) { res.writeHead(429); res.end('{"ok":false}'); return; }
-    let body = '';
-    req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
-    req.on('end', async () => {
-      try {
-        const j = JSON.parse(body);
-        const name = String(j.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 40);
-        const email = String(j.email || '').trim().toLowerCase().slice(0, 120);
-        if (!name || !EMAIL_RE.test(email)) throw new Error('invalid');
-        const row = { ts: new Date().toISOString(), name, email, ref: String(j.ref || '').slice(0, 60) };
-        await saveLead(row);
-        res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
-      } catch {
-        res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"ok":false,"error":"invalid"}');
-      }
-    });
+  if (url.pathname === '/api/lead' && req.method === 'POST') { handleLead(req, res).catch((e) => { console.error('lead', e.message); sendJson(res, 500, { ok: false, error: 'server' }); }); return; }
+  if (url.pathname === '/api/config') return sendJson(res, 200, { turnstile: process.env.TURNSTILE_SITEKEY || null, verify: mailerEnabled });
+  if (url.pathname === '/verify') {
+    store.byToken('verify', url.searchParams.get('t')).then(async (l) => {
+      if (!l) return page(res, 'Link expired', 'That confirmation link is not valid. Sign up again from the game to get a new one.');
+      await store.update(String(l.email).toLowerCase(), { status: 'verified', verified_at: new Date().toISOString() });
+      page(res, 'Email confirmed ✅', `Thanks ${String(l.name).replace(/[<>&"']/g, '')}! ${l.newsletter ? 'You will get your match recaps and Fundara news. You can unsubscribe any time.' : 'You are all set.'}`);
+    }).catch(() => page(res, 'Something went wrong', 'Please try the link again in a minute.'));
+    return;
+  }
+  if (url.pathname === '/unsubscribe') {
+    store.byToken('unsub', url.searchParams.get('t')).then(async (l) => {
+      if (!l) return page(res, 'Link not valid', 'This unsubscribe link is not valid.');
+      await store.update(String(l.email).toLowerCase(), { newsletter: false, unsub_at: new Date().toISOString() });
+      page(res, 'You are unsubscribed', 'You will no longer receive recaps or Fundara news. You can still play any time.');
+    }).catch(() => page(res, 'Something went wrong', 'Please try again in a minute.'));
     return;
   }
 
@@ -133,13 +182,26 @@ function handler(req, res) {
     return;
   }
 
+  if (url.pathname === '/api/leads/audit') {
+    if (!adminOk(url)) { res.writeHead(403); res.end('forbidden'); return; }
+    auditLeads().then((o) => sendJson(res, 200, o)).catch((e) => sendJson(res, 500, { error: e.message }));
+    return;
+  }
+  if (url.pathname === '/api/leads/purge' && req.method === 'POST') {
+    if (!adminOk(url) || url.searchParams.get('confirm') !== 'yes') { res.writeHead(403); res.end('forbidden: needs key and confirm=yes'); return; }
+    store.all().then((rows) => store.removeEmails(rows.filter((r) => String(r.risk).startsWith('invalid')).map((r) => String(r.email).toLowerCase()))).then((n) => sendJson(res, 200, { deleted: n })).catch((e) => sendJson(res, 500, { error: e.message }));
+    return;
+  }
   if (url.pathname === '/api/leads') {
     (async () => {
-    if (!ADMIN_KEY || url.searchParams.get('key') !== ADMIN_KEY) { res.writeHead(403); res.end('forbidden'); return; }
-    const rows = await loadLeads();
-    const esc = (s) => '"' + String(s).replace(/"/g, '""') + '"';
-    res.writeHead(200, { 'content-type': 'text/csv' });
-    res.end('timestamp,name,email,ref\n' + rows.map((r) => [r.ts, r.name, r.email, r.ref].map(esc).join(',')).join('\n'));
+      if (!adminOk(url)) { res.writeHead(403); res.end('forbidden'); return; }
+      const q = url.searchParams; let rows = await store.all();
+      if (q.get('status')) rows = rows.filter((r) => r.status === q.get('status'));
+      if (q.get('newsletter') === '1') rows = rows.filter((r) => r.newsletter);
+      if (q.get('risk') === 'ok') rows = rows.filter((r) => r.risk === 'ok');
+      const esc = (s) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+      res.writeHead(200, { 'content-type': 'text/csv' });
+      res.end('created_at,name,email,status,newsletter,risk,mx_ok,consent_at,verified_at,ref\n' + rows.map((r) => [r.created_at, r.name, r.email, r.status, r.newsletter ? 'yes' : 'no', r.risk, r.mx_ok, r.consent_at, r.verified_at, r.ref].map(esc).join(',')).join('\n'));
     })().catch(() => { res.writeHead(500); res.end('error'); });
     return;
   }
@@ -472,10 +534,24 @@ class MatchRoom extends Room {
       const wk = weekKey(); if (pf.wk !== wk) { pf.wk = wk; pf.wxp = 0; } pf.wxp += gain;
       await saveProfile(p.pid, p.name, pf);
       p.pf = pf; p.xp = pf.xp; p.lv = levelFor(p.xp);
+      this.maybeRecap(p, r, res, gain, pf);
       const c = this.clients.find((c) => c.sessionId === p.id);
       if (c) { c.send('xp', { parts, gain, xp: p.xp, lv: p.lv, up: p.lv > oldLv }); c.send('profile', profileSummary(pf)); }
     }
     this.sendRoster();
+  }
+
+  async maybeRecap(p, r, res, gain, pf) {
+    try {
+      if (!mailerEnabled || !p.pid) return;
+      const L = await store.byPid(p.pid);
+      if (!L || !L.newsletter || L.status !== 'verified' || L.risk !== 'ok') return;
+      if (L.last_recap && Date.now() - new Date(L.last_recap) < 20 * 3600e3) return;
+      const now = new Date().toISOString(); await store.update(String(L.email).toLowerCase(), { last_recap: now });
+      const unsub = `${BASE}/unsubscribe?t=${L.unsub_token}`, lv = levelFor(pf.xp);
+      const rec = { rank: res.findIndex((x) => x.id === p.id) + 1, players: res.length, net: r.net, cleared: p.cleared, gain, xp: pf.xp, rankName: RANKS[lv].n, rankIcon: RANKS[lv].i, streak: pf.streak };
+      await sendMail({ to: L.email, ...recapEmail(L, rec, unsub), unsubUrl: unsub });
+    } catch (e) { console.error('recap', e.message); }
   }
 
   snapshot() {

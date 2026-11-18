@@ -679,18 +679,35 @@ async function afterGate() {
   $('#lobby').classList.remove('hidden');
   await connect();
 }
+let gateShownAt = 0, cfg0 = null;
+async function showGate() {
+  $('#gate').classList.remove('hidden'); gateShownAt = performance.now();
+  try {
+    cfg0 = cfg0 || await (await fetch('/api/config')).json();
+    if (cfg0.verify) $('#gNote').textContent = 'We will email you a quick link to confirm your address. Your email is only used for your account and, if you opt in, recaps and Fundara news.';
+    if (cfg0.turnstile && !window.turnstile) {
+      const s = document.createElement('script'); s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; s.onload = () => window.turnstile?.render('#gCf', { sitekey: cfg0.turnstile, theme: 'dark' }); document.head.appendChild(s);
+    }
+  } catch {}
+}
 $('#gateForm').addEventListener('submit', async (e) => {
   e.preventDefault(); const name = $('#gName').value.trim(), email = $('#gEmail').value.trim();
   $('#gErr').textContent = ''; $('#gBtn').disabled = true;
+  const MSG = { syntax: "That email doesn't look right. Please check it.", disposable: "Temporary email addresses aren't accepted. Please use your real email.", junk: 'Please use your real email address.', domain: "That email domain can't receive mail. Please check for typos.", name: 'Please enter your real name.', rate: 'Too many attempts. Please try again later.', fast: 'Please take a moment to fill in the form.', captcha: 'Please complete the check and try again.' };
   try {
-    const r = await fetch('/api/lead', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, ref: document.referrer ? new URL(document.referrer).hostname : '' }) });
-    if (!r.ok) throw new Error();
+    const r = await fetch('/api/lead', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, pid, optin: $('#gOpt').checked, hp: $('#gHp').value, dt: Math.round(performance.now() - gateShownAt), cf: window.turnstile?.getResponse?.() || '', ref: document.referrer ? new URL(document.referrer).hostname : '' }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      if (d.error === 'typo' && d.suggest) { $('#gErr').innerHTML = `Did you mean <a id="gFix">${d.suggest.replace(/[<>&"]/g, '')}</a>?`; $('#gFix').onclick = () => { $('#gEmail').value = d.suggest; $('#gErr').textContent = ''; }; }
+      else $('#gErr').textContent = MSG[d.error] || 'Please enter a valid name and email.';
+      $('#gBtn').disabled = false; window.turnstile?.reset?.(); return;
+    }
     localStorage.setItem('frf_lead', JSON.stringify({ name, email })); myName = name; afterGate();
-  } catch { $('#gErr').textContent = 'Please enter a valid name and email.'; $('#gBtn').disabled = false; }
+  } catch { $('#gErr').textContent = 'Network problem. Please try again.'; $('#gBtn').disabled = false; }
 });
 function proceed() {
   $('#intro').classList.add('hidden'); beep(520, 0.12, 'triangle', 0.04, 780);
-  try { const l = JSON.parse(localStorage.getItem('frf_lead') || 'null'); if (l?.email) { myName = l.name; afterGate(); } else $('#gate').classList.remove('hidden'); } catch { $('#gate').classList.remove('hidden'); }
+  try { const l = JSON.parse(localStorage.getItem('frf_lead') || 'null'); if (l?.email) { myName = l.name; afterGate(); } else showGate(); } catch { showGate(); }
 }
 $('#playBtn').onclick = proceed;
 if (sessionStorage.getItem('frf_skipintro')) { sessionStorage.removeItem('frf_skipintro'); proceed(); }

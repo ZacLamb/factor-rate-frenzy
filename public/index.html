@@ -76,9 +76,12 @@
     <p class="sub">Merchant cash advances are fast, expensive and confusing. Play a 2-minute brawl and learn how factor rates, holdbacks and stacking really work.</p>
     <label>Your name<input id="gName" name="name" maxlength="14" placeholder="Merchant name" required autocomplete="name"></label>
     <label>Email to unlock play<input id="gEmail" name="email" type="email" placeholder="you@business.com" required autocomplete="email" inputmode="email"></label>
+    <input id="gHp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+    <label class="chk"><input type="checkbox" id="gOpt"><span>Email me my match recaps and Fundara news. Unsubscribe anytime.</span></label>
+    <div id="gCf"></div>
     <button class="btn" id="gBtn" type="submit">UNLOCK PLAY ▶</button>
     <div class="err" id="gErr"></div>
-    <small>We'll email your match recap and new maps. No spam, unsubscribe anytime.</small>
+    <small id="gNote">Your email is used for your account and, only if you opt in, recaps and Fundara news. We never sell it.</small>
     <div class="powered">POWERED BY <a class="fundara" href="https://fundara.co" target="_blank" rel="noopener">FUNDARA</a></div>
   </form>
 </div>
