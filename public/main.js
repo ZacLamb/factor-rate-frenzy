@@ -717,7 +717,11 @@ addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredIns
 $('#installBtn').onclick = async () => { deferredInstall?.prompt(); deferredInstall = null; $('#installBtn').classList.add('hidden'); };
 if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia('(display-mode: standalone)').matches || navigator.standalone)) $('#iosHint').classList.remove('hidden');
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-$('#resBtn').onclick = () => { $('#results').classList.add('hidden'); if (phase === 'lobby') $('#lobby').classList.remove('hidden'); };
+$('#resBtn').onclick = () => {
+  $('#results').classList.add('hidden');
+  if (gateAfterResults) { showGate(true); return; }
+  if (phase === 'lobby') $('#lobby').classList.remove('hidden');
+};
 
 function onResults(m) {
   $('#hud').classList.add('hidden');
@@ -734,6 +738,8 @@ function onResults(m) {
     $('#resLesson').innerHTML += `<br><b>${curMap.icon} ${curMap.name}:</b> ${curMap.lesson.replace(/^[^:]+: /, '')}`;
   }
   lastRes = { cleared: my?.cleared, rank, dur: m.dur }; vib([30, 60, 30]);
+  countGuestGame();
+  if (gateAfterResults) $('#resBtn').textContent = 'SAVE MY PROGRESS ▶';
   $('#resXp').classList.add('hidden'); $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
   jingle(!!(my?.cleared) || rank === 1);
 }
@@ -761,14 +767,36 @@ $('#lbBtn').onclick = openLeaderboard; $('#lbIntro').onclick = openLeaderboard; 
 function showMsg(t, p) { $('#msgT').textContent = t; $('#msgP').textContent = p; $('#msg').classList.remove('hidden'); }
 
 /* ---------- gate ---------- */
+// New players get FREE_GAMES matches as a guest before the name + email gate. Finished matches are
+// counted in this browser; once the trial is used up the gate shows after the results screen, and
+// again on the next visit until they sign up.
+const FREE_GAMES = 2;
+const hasLead = () => { try { return !!JSON.parse(localStorage.getItem('frf_lead') || 'null')?.email; } catch { return false; } };
+const guestPlayed = () => +(localStorage.getItem('frf_guest_games') || 0);
+let guest = false, gateAfterResults = false;
+function guestName() {
+  let n = localStorage.getItem('frf_guest_name');
+  if (!n) { n = 'Guest ' + Math.floor(1000 + Math.random() * 9000); try { localStorage.setItem('frf_guest_name', n); } catch {} }
+  return n;
+}
+function countGuestGame() {
+  if (!guest || hasLead()) return;
+  const n = guestPlayed() + 1; try { localStorage.setItem('frf_guest_games', String(n)); } catch {}
+  if (n >= FREE_GAMES) gateAfterResults = true;
+}
 async function afterGate() {
   $('#gate').classList.add('hidden'); buildSkins();
   $('#lobbyTip').textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
   $('#lobby').classList.remove('hidden');
-  await connect();
+  if (!room) await connect();
 }
 let gateShownAt = 0, cfg0 = null;
-async function showGate() {
+async function showGate(trialUsed = false) {
+  if (trialUsed) {
+    $('#gTitleNote').textContent = `You've played your ${FREE_GAMES} free games. Add your name and email to keep playing, save your XP and get on the leaderboard.`;
+    $('#gTitleNote').classList.remove('hidden');
+    $('#lobby').classList.add('hidden');
+  }
   $('#gate').classList.remove('hidden'); gateShownAt = performance.now();
   try {
     cfg0 = cfg0 || await (await fetch('/api/config')).json();
@@ -790,12 +818,19 @@ $('#gateForm').addEventListener('submit', async (e) => {
       else $('#gErr').textContent = MSG[d.error] || 'Please enter a valid name and email.';
       $('#gBtn').disabled = false; window.turnstile?.reset?.(); return;
     }
-    localStorage.setItem('frf_lead', JSON.stringify({ name, email })); myName = name; afterGate();
+    localStorage.setItem('frf_lead', JSON.stringify({ name, email })); myName = name; guest = false; gateAfterResults = false;
+    room?.send('prof', { name: myName, skin: mySkin }); // a guest who just signed up keeps their seat, renamed
+    afterGate();
   } catch { $('#gErr').textContent = 'Network problem. Please try again.'; $('#gBtn').disabled = false; }
 });
 function proceed() {
   $('#intro').classList.add('hidden'); beep(520, 0.12, 'triangle', 0.04, 780); setMood('lobby');
-  try { const l = JSON.parse(localStorage.getItem('frf_lead') || 'null'); if (l?.email) { myName = l.name; afterGate(); } else showGate(); } catch { showGate(); }
+  try {
+    const l = JSON.parse(localStorage.getItem('frf_lead') || 'null');
+    if (l?.email) { myName = l.name; afterGate(); }
+    else if (guestPlayed() < FREE_GAMES) { guest = true; myName = guestName(); afterGate(); }
+    else showGate(true);
+  } catch { showGate(); }
 }
 $('#playBtn').onclick = proceed;
 if (sessionStorage.getItem('frf_skipintro')) { sessionStorage.removeItem('frf_skipintro'); proceed(); }
