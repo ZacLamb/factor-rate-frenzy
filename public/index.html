@@ -57,6 +57,7 @@
 <!-- Intro -->
 <div id="intro" class="overlay">
   <div class="intro">
+    <div class="tgBanner">🦃 Happy Thanksgiving from Fundara! Gobble up sales, not stacks 🍂</div>
     <div class="kicker">THE MERCHANT CASH ADVANCE GAME</div>
     <div class="title"><span>FACTOR</span><span>RATE</span><span class="g">FRENZY</span></div>
     <p class="tag">Take the advance. Beat the holdback. <b>Don't stack.</b></p>
@@ -131,12 +132,22 @@
     <div id="resList"></div>
     <div id="resLesson" class="lesson"></div>
     <div id="resXp" class="lesson hidden" style="background:rgba(61,220,151,.1);border-color:rgba(61,220,151,.4)"></div>
+    <div id="leadQ" class="lesson leadq hidden">
+      <div id="lqAsk"><b>Quick question 👋</b> Are you looking for MCA leads right now?
+        <div class="lqBtns"><button class="btn small" data-a="yes">YES</button><button class="btn small ghost2" data-a="no">NOT RIGHT NOW</button></div></div>
+      <div id="lqMore" class="hidden"><b>What kind?</b>
+        <div class="lqChips"><button data-k="email">📧 Email leads</button><button data-k="live">📞 Live transfers</button><button data-k="data">📋 Aged / data lists</button><button data-k="unsure">🤔 Not sure yet</button></div>
+        <input id="lqEmail" type="email" class="hidden" placeholder="Your email so we can send options" autocomplete="email" inputmode="email">
+        <button class="btn small" id="lqSend" disabled>SEND ▶</button><div class="err" id="lqErr"></div></div>
+      <div id="lqDone" class="hidden">🙌 Got it. Someone from Fundara will reach out with lead options.</div>
+    </div>
     <div class="rbtns"><button class="btn ghost2" id="resBtn">LOBBY</button><button class="btn" id="shareBtn">📲 CHALLENGE FRIENDS</button></div>
     <div class="powered">POWERED BY <a class="fundara" href="https://fundara.co" target="_blank" rel="noopener">FUNDARA</a></div>
   </div>
 </div>
 
 <div id="banner" class="hidden"></div>
+<div id="leaves" aria-hidden="true"></div>
 <div id="lbPanel" class="overlay hidden" style="z-index:20"><div class="panel">
   <h2>🏆 GLOBAL LEADERBOARD</h2>
   <div class="tabs"><button id="tabAll" class="on">All-time</button><button id="tabWeek">This week</button></div>

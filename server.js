@@ -102,6 +102,45 @@ async function verifyTurnstile(tok, ip) {
   try { const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: new URLSearchParams({ secret, response: String(tok || ''), remoteip: ip }) }); return !!(await r.json()).success; } catch { return false; }
 }
 
+/* ---------------- "Looking for leads?" answers from the results screen ---------------- */
+// Stored in Postgres (or data/lead_interest.json), and a "yes" is forwarded to Zac: by email when the
+// mailer is on (NOTIFY_EMAIL, default zac@fundara.co) and to LEAD_INTEREST_WEBHOOK (e.g. a GHL inbound
+// webhook) when set. List them at /api/lead-interest?key=ADMIN_KEY.
+const LI_FILE = path.join(DATA_DIR, 'lead_interest.json');
+const LI_TYPES = { email: 'Email leads', live: 'Live transfers', data: 'Aged / data lists', unsure: 'Not sure yet' };
+if (pool) pool.query(`CREATE TABLE IF NOT EXISTS lead_interest (id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT now(), pid TEXT, name TEXT, email TEXT, answer TEXT, kind TEXT, volume TEXT)`).catch((e) => console.error('lead_interest init', e.message));
+const liSeen = new Map();
+async function handleLeadInterest(req, res) {
+  const ip = clientIp(req);
+  let j; try { j = await readJson(req); } catch { return sendJson(res, 400, { ok: false }); }
+  const pid = String(j.pid || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
+  const answer = j.answer === 'yes' ? 'yes' : 'no';
+  const kind = LI_TYPES[j.kind] ? j.kind : null;
+  const volume = String(j.volume || '').replace(/[^0-9a-zA-Z +\-–/,]/g, '').slice(0, 30) || null;
+  const key = pid || ip; const now = Date.now();
+  if (now - (liSeen.get(key) || 0) < 20e3) return sendJson(res, 429, { ok: false, error: 'rate' });
+  liSeen.set(key, now);
+  let name = null, email = null;
+  const lead = pid ? await store.byPid(pid).catch(() => null) : null;
+  if (lead) { name = lead.name; email = lead.email; }
+  if (!email && j.email) { const em = checkEmailStatic(j.email); if (!em.ok) return sendJson(res, 400, { ok: false, error: 'email' }); email = em.email; }
+  if (!name && j.name) { const nm = checkName(j.name); if (nm.ok) name = nm.name; }
+  if (answer === 'yes' && !email) return sendJson(res, 400, { ok: false, error: 'email' });
+  const row = { pid, name, email, answer, kind, volume, created_at: new Date().toISOString() };
+  if (pool) await pool.query('INSERT INTO lead_interest (pid,name,email,answer,kind,volume) VALUES ($1,$2,$3,$4,$5,$6)', [pid, name, email, answer, kind, volume]);
+  else { let a = []; try { a = JSON.parse(fs.readFileSync(LI_FILE, 'utf8')); } catch {} a.push(row); fs.writeFileSync(LI_FILE, JSON.stringify(a)); }
+  if (answer === 'yes') {
+    console.log('LEAD-INTEREST', name, email, kind, volume);
+    const label = LI_TYPES[kind] || 'Not specified';
+    if (mailerEnabled) sendMail({ to: process.env.NOTIFY_EMAIL || 'zac@fundara.co', subject: `Factor Rate Frenzy: ${name || email} wants leads (${label})`,
+      html: `<p><b>${String(name || '').replace(/[<>&]/g, '')}</b> (${email}) answered <b>yes</b> to "Looking for MCA leads?" in Factor Rate Frenzy.</p><p>Type: ${label}${volume ? `<br>Volume: ${volume}` : ''}</p>`,
+      text: `${name || ''} (${email}) wants MCA leads. Type: ${label}${volume ? ', volume: ' + volume : ''}` }).catch(() => {});
+    if (process.env.LEAD_INTEREST_WEBHOOK) fetch(process.env.LEAD_INTEREST_WEBHOOK, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'factor-rate-frenzy', name, email, lead_type: label, volume, tags: ['frf-wants-leads'] }) }).catch((e) => console.error('lead-interest webhook', e.message));
+  }
+  sendJson(res, 200, { ok: true });
+}
+
 async function handleLead(req, res) {
   const ip = clientIp(req);
   if (rateLimited(ip)) return sendJson(res, 429, { ok: false, error: 'rate' });
@@ -154,6 +193,13 @@ function handler(req, res) {
   if (url.pathname === '/health') { res.end('ok'); return; }
 
   if (url.pathname === '/api/lead' && req.method === 'POST') { handleLead(req, res).catch((e) => { console.error('lead', e.message); sendJson(res, 500, { ok: false, error: 'server' }); }); return; }
+  if (url.pathname === '/api/lead-interest' && req.method === 'POST') { handleLeadInterest(req, res).catch((e) => { console.error('lead-interest', e.message); sendJson(res, 500, { ok: false }); }); return; }
+  if (url.pathname === '/api/lead-interest') {
+    if (!adminOk(url)) { res.writeHead(403); res.end('forbidden'); return; }
+    (pool ? pool.query('SELECT * FROM lead_interest ORDER BY id DESC LIMIT 500').then((r) => r.rows) : Promise.resolve((() => { try { return JSON.parse(fs.readFileSync(LI_FILE, 'utf8')).reverse(); } catch { return []; } })()))
+      .then((rows) => sendJson(res, 200, { total: rows.length, yes: rows.filter((r) => r.answer === 'yes').length, rows })).catch((e) => sendJson(res, 500, { error: e.message }));
+    return;
+  }
   if (url.pathname === '/api/config') return sendJson(res, 200, { turnstile: process.env.TURNSTILE_SITEKEY || null, verify: mailerEnabled });
   if (url.pathname === '/verify') {
     store.byToken('verify', url.searchParams.get('t')).then(async (l) => {

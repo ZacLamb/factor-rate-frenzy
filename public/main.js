@@ -613,6 +613,7 @@ let wl = null;
 async function wakeOn() { try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch {} }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && phase === 'play') wakeOn(); });
 function onPhase(prev) {
+  document.body.classList.toggle('playing', phase === 'play');
   if (phase === 'play') wakeOn(); else { try { wl?.release(); } catch {} }
   tempoMul = 1; if (phase === 'play') setMood('play'); else if (phase === 'lobby') setMood('lobby'); else setMood('none');
   if (phase === 'play') { $('#results').classList.add('hidden'); $('#lobby').classList.add('hidden'); $('#hud').classList.remove('hidden'); showBanner(curMap.icon + ' ' + curMap.name.toUpperCase(), 'Pay off your advance first. You owe $6,750 — 25% of each coin is swept to the lender. ' + curMap.blurb); beep(660, 0.3, 'square', 0.04, 990); }
@@ -738,7 +739,7 @@ function onResults(m) {
     $('#resLesson').innerHTML += `<br><b>${curMap.icon} ${curMap.name}:</b> ${curMap.lesson.replace(/^[^:]+: /, '')}`;
   }
   lastRes = { cleared: my?.cleared, rank, dur: m.dur }; vib([30, 60, 30]);
-  countGuestGame();
+  countGuestGame(); showLeadQ();
   if (gateAfterResults) $('#resBtn').textContent = 'SAVE MY PROGRESS ▶';
   $('#resXp').classList.add('hidden'); $('#results').classList.remove('hidden'); $('#lobby').classList.add('hidden');
   jingle(!!(my?.cleared) || rank === 1);
@@ -765,6 +766,48 @@ const setTab = (p) => { lbPeriod = p; $('#tabAll').classList.toggle('on', p === 
 $('#tabAll').onclick = () => setTab('all'); $('#tabWeek').onclick = () => setTab('week');
 $('#lbBtn').onclick = openLeaderboard; $('#lbIntro').onclick = openLeaderboard; $('#lbClose').onclick = () => $('#lbPanel').classList.add('hidden');
 function showMsg(t, p) { $('#msgT').textContent = t; $('#msgP').textContent = p; $('#msg').classList.remove('hidden'); }
+
+/* ---------- Thanksgiving week (auto on Nov 22–29 2026, preview with ?tg=1) ---------- */
+const TG = (() => { const d = new Date(), k = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); return (k >= 20261122 && k <= 20261129) || new URLSearchParams(location.search).has('tg'); })();
+if (TG) {
+  document.body.classList.add('tg');
+  const lv = $('#leaves'), L = ['🍂', '🍁', '🍂', '🍁', '🌽', '🦃'];
+  for (let i = 0; i < 16; i++) { const e = document.createElement('span'); e.textContent = L[i % L.length]; e.style.left = Math.random() * 100 + 'vw'; e.style.animationDuration = 7 + Math.random() * 8 + 's'; e.style.animationDelay = -Math.random() * 15 + 's'; e.style.fontSize = 16 + Math.random() * 16 + 'px'; lv.appendChild(e); }
+  TIPS.unshift('🦃 Thanksgiving tip: be thankful for a fixed cost. Stacking a second advance on the first is how merchants end up the turkey.');
+}
+
+/* ---------- "Looking for leads?" question (results screen, once; "not now" asks again after 7 days) ---------- */
+let lqKind = null;
+function leadQDue() {
+  try { const a = JSON.parse(localStorage.getItem('frf_leadq') || 'null'); if (!a) return true; if (a.a === 'yes') return false; return Date.now() - a.t > 7 * 864e5; } catch { return true; }
+}
+function showLeadQ() {
+  if (!leadQDue()) { $('#leadQ').classList.add('hidden'); return; }
+  $('#lqAsk').classList.remove('hidden'); $('#lqMore').classList.add('hidden'); $('#lqDone').classList.add('hidden');
+  $('#leadQ').classList.remove('hidden');
+}
+async function sendLeadQ(answer) {
+  const body = { pid, answer, kind: lqKind, email: $('#lqEmail').value.trim() || undefined, name: myName && !guest ? myName : undefined };
+  const r = await fetch('/api/lead-interest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json().catch(() => ({ ok: r.ok }));
+}
+$('#leadQ').querySelectorAll('.lqBtns button').forEach((b) => b.onclick = async () => {
+  if (b.dataset.a === 'no') { try { localStorage.setItem('frf_leadq', JSON.stringify({ a: 'no', t: Date.now() })); } catch {} sendLeadQ('no').catch(() => {}); $('#leadQ').classList.add('hidden'); return; }
+  $('#lqAsk').classList.add('hidden'); $('#lqMore').classList.remove('hidden');
+  $('#lqEmail').classList.toggle('hidden', hasLead());
+});
+$('#leadQ').querySelectorAll('.lqChips button').forEach((b) => b.onclick = () => {
+  lqKind = b.dataset.k; $('#leadQ').querySelectorAll('.lqChips button').forEach((x) => x.classList.toggle('on', x === b)); $('#lqSend').disabled = false;
+});
+$('#lqSend').onclick = async () => {
+  $('#lqErr').textContent = ''; $('#lqSend').disabled = true;
+  try {
+    const d = await sendLeadQ('yes');
+    if (!d.ok) { $('#lqErr').textContent = d.error === 'email' ? 'Please enter a valid email so we can reach you.' : 'Something went wrong. Try again.'; $('#lqSend').disabled = false; return; }
+    try { localStorage.setItem('frf_leadq', JSON.stringify({ a: 'yes', t: Date.now() })); } catch {}
+    $('#lqMore').classList.add('hidden'); $('#lqDone').classList.remove('hidden');
+  } catch { $('#lqErr').textContent = 'Network problem. Try again.'; $('#lqSend').disabled = false; }
+};
 
 /* ---------- gate ---------- */
 // New players get FREE_GAMES matches as a guest before the name + email gate. Finished matches are

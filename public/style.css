@@ -171,3 +171,27 @@ body.touch #evt{top:calc(max(8px,env(safe-area-inset-top)) + 46px);font-size:11p
 
 .hudMute{position:absolute;right:10px;top:calc(max(10px,env(safe-area-inset-top)) + 372px);width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:#fff;font-size:16px;pointer-events:auto;cursor:pointer}
 body.touch .hudMute{top:calc(max(10px,env(safe-area-inset-top)) + 126px);width:30px;height:30px;font-size:14px}
+
+/* ---- "Looking for leads?" question on the results screen ---- */
+.leadq{display:flex;flex-direction:column;gap:8px}
+.lqBtns{display:flex;gap:8px;margin-top:8px}.lqBtns .btn{flex:1}
+.lqChips{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+.lqChips button{font:inherit;font-size:13px;padding:10px 8px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+.lqChips button.on{border-color:var(--gold);background:rgba(255,200,61,.18)}
+#lqEmail{width:100%;margin-bottom:8px}
+
+/* ---- Thanksgiving week (body.tg, set by main.js Nov 22–29 2026 only) ---- */
+#leaves{display:none}
+body.tg #leaves{display:block;position:fixed;inset:0;pointer-events:none;z-index:9;overflow:hidden}
+body.tg.playing #leaves{display:none}
+#leaves span{position:absolute;top:-8vh;font-size:22px;opacity:.85;animation:leaf linear infinite}
+@keyframes leaf{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(118vh) rotate(540deg) translateX(40px)}}
+body.tg .overlay{background:radial-gradient(ellipse at top,rgba(140,58,12,.5),rgba(24,10,4,.93) 70%)}
+body.tg .panel{border-color:rgba(232,128,48,.45);box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px rgba(232,128,48,.15)}
+body.tg .title .g{color:#ffb347;text-shadow:0 0 40px rgba(255,140,40,.65),0 6px 0 #8a3a00}
+body.tg .kicker{color:#ffcf99}
+body.tg .logo{color:#ffb347;text-shadow:0 0 24px rgba(255,140,40,.5)}
+body.tg h2{color:#ffb347}
+body.tg .btn:not(.ghost2){background:linear-gradient(180deg,#ffb347,#e8701e);color:#2a1000;box-shadow:0 6px 0 #8a3a00,0 10px 24px rgba(232,112,30,.35)}
+.tgBanner{display:none}
+body.tg .tgBanner{display:block;padding:8px 14px;border-radius:999px;background:rgba(232,112,30,.18);border:1px solid rgba(255,160,80,.5);color:#ffd8a8;font-weight:700;font-size:13px;letter-spacing:.5px}
